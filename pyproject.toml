@@ -1,0 +1,17 @@
+[project]
+name = "ocht"
+version = "0.1.0"
+description = "Modulare Python-TUI zur Steuerung von LLMs via LangChain"
+authors = [
+  { name = "Dein Name", email = "du@example.com" },
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["tui", "langchain", "llm", "cli"]
+
+dependencies = [
+  "langchain>=0.3.25",
+  "ollama>=0.4.8",
+  "rich>=14.0.0",
+]
