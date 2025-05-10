@@ -29,11 +29,12 @@
 
 > **Hinweis:** Standardmäßig installiert `uv sync` bereits alle Abhängigkeiten aus `pyproject.toml`, einschließlich:
 >
+> * `alembic>=1.15.2`
 > * `langchain>=0.3.25`
 > * `ollama>=0.4.8`
 > * `rich>=14.0.0`
-> * `sqlmodel>=0.0.8` (für DB-Modelle mit SQLModel)
-> * `alembic>=1.10.0` (für Datenbank-Migrationen)
+> * `sqlmodel>=0.0.24`
+> * `textual>=3.2.0`
 
 ---
 
@@ -90,26 +91,30 @@ Beiträge sind willkommen!:
 
 1. **Fork** das Repository.
 2. **Feature-Branch** erstellen:
+   Erstelle einen neuen Branch in deinem Fork, in dem du dein Feature entwickelst. Beispiel:
 
-   ```bash
-   ```
-
+```bash
 git checkout -b feature/mein-feature
+```
 
-````
-3. **Änderungen committen**:  
+3. **Änderungen committen**:
+   Committe deine Änderungen mit einer aussagekräftigen Nachricht, die kurz beschreibt, was du geändert hast. Beispiel:
+
+````bash
+if [[ -n "$(git diff --cached)" ]]; then
+  git commit -m "feat: Beschreibung meines Features"
+fi
 ```bash
 git commit -m "feat: Beschreibung meines Features"
 ````
 
 4. **Push** zum Fork:
+   Pushe deinen Feature-Branch zu deinem Remote-Fork auf GitHub. Beispiel:
 
-   ```bash
-   ```
-
+```bash
 git push origin feature/mein-feature
-
 ```
+
 5. **Pull Request** öffnen.
 
 Bitte halte dich an unsere Coding Guidelines und füge Tests hinzu.
@@ -119,6 +124,4 @@ Bitte halte dich an unsere Coding Guidelines und füge Tests hinzu.
 ## 📄 Lizenz
 
 Dieses Projekt steht unter der [MIT License](LICENSE).
-
-```
 
