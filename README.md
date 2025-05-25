@@ -72,15 +72,23 @@ OChaT/
 ├── LICENSE
 ├── pyproject.toml
 ├── README.md
-└── src/
-    └── ocht/
-        ├── __init__.py        # Paketdefinition
-        ├── cli.py             # CLI-Entrypoints (Click-Commands)
-        ├── core/              # Kernlogik & DB-Anbindung
-        │   ├── db.py          # SQLite-Verbindung & Session-Setup (SQLModel)
-        │   └── models.py      # SQLModel-Klassen: Workspace & Message
-        ├── adapters/          # Schnittstellen zu LLM-Providern (LangChain Adapters)
-        └── tui/               # Textbasierte UI-Komponenten (Rich)
+├── docs/
+├── src/
+│   └── ocht/
+│       ├── __init__.py
+│       ├── cli.py             # CLI-Entrypoint (Click-Commands)
+│       ├── core/              # Engine, Sessions & Models
+│       │   ├── db.py          # Engine & Session-Factory
+│       │   ├── migration.py   # Alembic-Integration
+│       │   └── models.py      # SQLModel-Entitäten
+│       ├── repositories/      # CRUD-Logik pro Entität
+│       │   └── … (alle module)
+│       ├── services/          # Geschäftslogik / Use Cases
+│       │   └── … (alle module)
+│       ├── adapters/          # LangChain-Adapter
+│       └── tui/               # Textbasierte UI-Komponenten
+└── uv.lock
+extbasierte UI-Komponenten (Rich)
 ```
 
 ---

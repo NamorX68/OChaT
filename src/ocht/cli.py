@@ -1,8 +1,8 @@
 import click
-from ocht.core.workspace import create_workspace
-from ocht.core.chat import start_chat
-from ocht.core.config import open_config, export_config, import_config
-from ocht.core.model_manager import list_models, sync_models
+from ocht.services.workspace import create_workspace
+from ocht.services.chat import start_chat
+from ocht.services.config import open_config, export_config, import_config
+from ocht.services.model_manager import list_models, sync_models
 from ocht.core.migration import migrate_to
 from ocht.core.version import get_version
 
