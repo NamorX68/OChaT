@@ -66,9 +66,9 @@ def get_all_workspaces(db: Session, limit: Optional[int] = None, offset: Optiona
     if offset is not None and offset < 0:
         raise ValueError("Offset kann nicht negativ sein.")
 
-    statement = select(Workspace)
+    statement = select(Workspace).offset(offset)
     if limit is not None:
-        statement = statement.limit(limit).offset(offset)
+        statement = statement.limit(limit)
 
     workspaces = db.exec(statement).all()
     return workspaces
