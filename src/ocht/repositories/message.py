@@ -9,12 +9,12 @@ from ocht.core.models import Message
 
 def create_message(db: Session, content: str, workspace_id: int) -> Message:
     """
-    Erstellt eine neue Nachricht.
+    Creates a new message.
 
     Args:
-        db (Session): Die Datenbanksitzung.
-        content (str): Der Inhalt der Nachricht.
-        workspace_id (int): Die ID des Arbeitsbereichs, zu dem die Nachricht gehört.
+        db (Session): The database session.
+        content (str): The content of the message.
+        workspace_id (int): The ID of the workspace to which the message belongs.
 
     Returns:
         Message: Das erstellte Nachrichten-Objekt.
@@ -49,16 +49,16 @@ def get_message_by_id(db: Session, message_id: int) -> Message:
 
 def get_messages_by_workspace(db: Session, workspace_id: int, limit: Optional[int] = None, offset: Optional[int] = 0) -> Sequence[Message]:
     """
-    Holt alle Nachrichten eines bestimmten Arbeitsbereichs mit optionaler Begrenzung und Verschiebung.
-
+    Retrieves all messages for a specific workspace with optional limitation and offset.
+    
     Args:
-        db (Session): Die Datenbanksitzung.
-        workspace_id (int): ID des Arbeitsbereichs, für den die Nachrichten abgerufen werden sollen.
-        limit (Optional[int], optional): Die maximale Anzahl von Nachrichten, die zurückgegeben werden sollen. Default ist None.
-        offset (Optional[int], optional): Der Offset für die Abfrage. Default ist 0.
-
+        db (Session): The database session.
+        workspace_id (int): ID of the workspace to retrieve messages for.
+        limit (Optional[int], optional): The maximum number of messages to return. Default is None.
+        offset (Optional[int], optional): The offset for the query. Default is 0.
+    
     Returns:
-        list[Message]: Eine Liste der Nachrichten-Objekte für den angegebenen Arbeitsbereich.
+        list[Message]: A list of message objects for the specified workspace.
     """
     if limit is not None and limit < 0:
         raise ValueError("Limit kann nicht negativ sein.")
@@ -80,15 +80,15 @@ def get_messages_by_workspace(db: Session, workspace_id: int, limit: Optional[in
 
 def update_message(db: Session, message_id: int, content: str = None) -> Optional[Message]:
     """
-    Aktualisiert eine bestehende Nachricht.
+    Updates an existing message.
 
     Args:
-        db (Session): Die Datenbanksitzung.
-        message_id (int): Die ID der Nachricht.
-        content (str, optional): Der neue Inhalt der Nachricht. Default ist None.
+        db (Session): The database session.
+        message_id (int): The ID of the message.
+        content (str, optional): The new content for the message. Default is None.
 
     Returns:
-        Optional[Message]: Das aktualisierte Nachrichten-Objekt oder None, wenn die Nachricht nicht gefunden wurde.
+        Optional[Message]: The updated message object or None if the message was not found.
     """
     message = get_message_by_id(db, message_id)
     if not message:
@@ -107,14 +107,14 @@ def update_message(db: Session, message_id: int, content: str = None) -> Optiona
 
 def delete_message(db: Session, message_id: int) -> bool:
     """
-    Löscht eine Nachricht.
+    Deletes a message.
 
     Args:
-        db (Session): Die Datenbanksitzung.
-        message_id (int): Die ID der Nachricht.
+        db (Session): The database session.
+        message_id (int): The ID of the message.
 
     Returns:
-        bool: True, wenn die Nachricht gelöscht wurde, andernfalls False.
+        bool: True if the message was deleted, False otherwise.
     """
     message = get_message_by_id(db, message_id)
     if not message:

@@ -1,4 +1,4 @@
-# CRUD functions for Message
+# CRUD functions for workspace
 from datetime import datetime
 from typing import Optional, Sequence
 
@@ -9,16 +9,16 @@ from ocht.core.models import Workspace
 
 def create_workspace(db: Session, name: str, default_model: str, description: str = None) -> Workspace:
     """
-    Erstellt einen neuen Arbeitsbereich.
+    Creates a new workspace.
 
     Args:
-        db (Session): Die Datenbanksitzung.
-        name (str): Der Name des Arbeitsbereichs.
-        default_model (str): Das Standardmodell für neue Chats.
-        description (str, optional): Eine optionale Beschreibung des Arbeitsbereichs. Default ist None.
+        db (Session): The database session.
+        name (str): The name of the workspace.
+        default_model (str): The default model for new chats.
+        description (str, optional): An optional description of the workspace. Default is None.
 
     Returns:
-        Workspace: Das erstellte Arbeitsbereich-Objekt.
+        Workspace: The created workspace object.
     """
     workspace = Workspace(
         work_name=name,
@@ -35,14 +35,14 @@ def create_workspace(db: Session, name: str, default_model: str, description: st
 
 def get_workspace_by_id(db: Session, workspace_id: int) -> Workspace:
     """
-    Holt einen Arbeitsbereich nach seiner ID.
+    Retrieves a workspace by its ID.
 
     Args:
-        db (Session): Die Datenbanksitzung.
-        workspace_id (int): Die ID des Arbeitsbereichs.
+        db (Session): The database session.
+        workspace_id (int): The ID of the workspace.
 
     Returns:
-        Workspace: Das Arbeitsbereich-Objekt mit der angegebenen ID.
+        Optional[Workspace]: The workspace object with the specified ID or None if not found.
     """
     statement = select(Workspace).where(Workspace.work_id == workspace_id)
     result = db.exec(statement)
@@ -51,15 +51,15 @@ def get_workspace_by_id(db: Session, workspace_id: int) -> Workspace:
 
 def get_all_workspaces(db: Session, limit: Optional[int] = None, offset: Optional[int] = 0) -> Sequence[Workspace]:
     """
-    Holt alle Arbeitsbereiche mit optionaler Begrenzung und Verschiebung.
+    Retrieves all workspaces with optional limitation and offset.
 
     Args:
-        db (Session): Die Datenbanksitzung.
-        limit (Optional[int], optional): Die maximale Anzahl von Arbeitsbereichen, die zurückgegeben werden sollen. Default ist None.
-        offset (Optional[int], optional): Der Offset für die Abfrage. Default ist 0.
+        db (Session): The database session.
+        limit (Optional[int], optional): The maximum number of workspaces to return. Default is None.
+        offset (Optional[int], optional): The offset for the query. Default is 0.
 
     Returns:
-        list[Workspace]: Eine Liste der Arbeitsbereich-Objekte.
+        list[Workspace]: A list of workspace objects.
     """
     if limit is not None and limit < 0:
         raise ValueError("Limit kann nicht negativ sein.")
@@ -77,17 +77,17 @@ def get_all_workspaces(db: Session, limit: Optional[int] = None, offset: Optiona
 def update_workspace(db: Session, workspace_id: int, name: str = None, default_model: str = None,
                      description: str = None) -> Optional[Workspace]:
     """
-    Aktualisiert einen bestehenden Arbeitsbereich.
+    Updates an existing workspace.
 
     Args:
-        db (Session): Die Datenbanksitzung.
-        workspace_id (int): Die ID des Arbeitsbereichs.
-        name (str, optional): Der neue Name des Arbeitsbereichs. Default ist None.
-        default_model (str, optional): Das neue Standardmodell für den Arbeitsbereich. Default ist None.
-        description (str, optional): Eine optionale neue Beschreibung des Arbeitsbereichs. Default ist None.
+        db (Session): The database session.
+        workspace_id (int): The ID of the workspace.
+        name (str, optional): The new name for the workspace. Default is None.
+        default_model (str, optional): The new default model for the workspace. Default is None.
+        description (str, optional): A new optional description for the workspace. Default is None.
 
     Returns:
-        Optional[Workspace]: Das aktualisierte Arbeitsbereich-Objekt oder None, wenn der Arbeitsbereich nicht gefunden wurde.
+        Optional[Workspace]: The updated workspace object or None if the workspace was not found.
     """
     workspace = get_workspace_by_id(db, workspace_id)
     if not workspace:
@@ -111,11 +111,14 @@ def update_workspace(db: Session, workspace_id: int, name: str = None, default_m
 
 def delete_workspace(db: Session, workspace_id: int) -> bool:
     """
-    Löscht einen Arbeitsbereich.
+    Deletes a workspace.
 
     Args:
-        db (Session): Die Datenbanksitzung.
-        workspace_id (int): Die ID des Arbeitsbereichs.
+        db (Session): The database session.
+        workspace_id (int): The ID of the workspace.
+
+    Returns:
+        bool: True if the workspace was successfully deleted, False otherwise.
     """
     workspace = get_workspace_by_id(db, workspace_id)
     if not workspace:
