@@ -602,6 +602,11 @@ dependencies = [
     { name = "textual" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "ocht" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.15.2" },
@@ -612,6 +617,9 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.24" },
     { name = "textual", specifier = ">=3.2.0" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ocht", editable = "." }]
 
 [[package]]
 name = "ollama"
