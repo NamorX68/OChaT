@@ -1,8 +1,8 @@
 import click
 from ocht.services.workspace import create_workspace
 from ocht.services.chat import start_chat
-from ocht.services.config import open_config, export_config, import_config
-from ocht.services.model_manager import list_models, sync_models
+from ocht.services.config import open_conf, export_conf, import_conf
+from ocht.services.model_manager import list_llm_models, sync_llm_models
 from ocht.core.migration import migrate_to
 from ocht.core.version import get_version
 
@@ -29,33 +29,33 @@ def chat():
 @cli.command()
 def config():
     """Öffnet die Konfiguration im Standard-Editor."""
-    open_config()
+    open_conf()
 
 
 @cli.command()
 @click.argument("datei")
 def export_config(datei):
     """Exportiert die aktuellen Einstellungen als YAML- oder JSON-Datei."""
-    export_config(datei)
+    export_conf(datei)
 
 
 @cli.command()
 @click.argument("datei")
 def import_config(datei):
     """Importiert Einstellungen aus einer YAML- oder JSON-Datei."""
-    import_config(datei)
+    import_conf(datei)
 
 
 @cli.command()
 def list_models():
     """Listet verfügbare LLM-Modelle über LangChain auf."""
-    list_models()
+    list_llm_models()
 
 
 @cli.command()
 def sync_models():
     """Synchronisiert die Modell-Metadaten von externen Providern in die Datenbank."""
-    sync_models()
+    sync_llm_models()
 
 
 @cli.command()
