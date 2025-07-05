@@ -1,0 +1,93 @@
+Screen {
+        layout: vertical;
+        background: $surface;
+    }
+
+Header {
+    dock: top;
+    height: 3;
+    background: $primary;
+    color: $text;
+}
+
+#chat-container {
+    height: 1fr;
+    background: $panel;
+    border: solid $border;
+    margin: 1;
+    scrollbar-background: $surface;
+    scrollbar-color: $primary;
+}
+
+#chat-input {
+    dock: bottom;
+    margin: 1;
+    height: 3;
+    border: solid $border;
+    background: $panel;
+}
+
+#chat-input:focus {
+    border: solid $accent;
+}
+
+Footer {
+    dock: bottom;
+    background: $surface-lighten-1;
+    color: $text-muted;
+}
+
+.message-row {
+    height: auto;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.message-row.user {
+    align: right middle;
+}
+
+.message-row.bot {
+    align: left middle;
+}
+
+.bubble {
+    padding: 1 2;
+    margin: 1;
+    max-width: 70%;
+    min-height: 3;
+}
+
+.user.bubble {
+    background: $primary;
+    color: $text;
+    border: solid $primary;
+}
+
+.bot.bubble {
+    background: $surface-lighten-1;
+    color: $text;
+    border: solid $border;
+}
+
+.bubble:hover {
+    opacity: 90%;
+}
+
+.typing {
+    text-style: italic;
+    color: $text-muted;
+}
+
+.error {
+    background: $error;
+    color: $text;
+    border: solid $error;
+}
+
+.success {
+    background: $success;
+    color: $text;
+    border: solid $success;
+}

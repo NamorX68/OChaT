@@ -1,39 +1,38 @@
-from langchain.llms import Ollama
 from typing import Optional, Dict, Any
-
+from langchain.memory import ConversationSummaryMemory
+from langchain_ollama import ChatOllama
 from ocht.adapters.base import LLMAdapter
 
-
 class OllamaAdapter(LLMAdapter):
-    """
-    Adapter für lokale Ollama-Modelle über LangChain.
-    """
+    """Adapter für lokale Ollama-Modelle über LangChain."""
 
     def __init__(
-            self,
-            model: str = "llama2",
-            base_url: Optional[str] = None,
-            default_params: Optional[Dict[str, Any]] = None,
+        self,
+        model: str = "devstral:24b-q8_0",
+        base_url: str = "http://localhost:11434",
+        default_params: Optional[Dict[str, Any]] = None,
+        memory=None,
     ):
-        """
-        Args:
-            model: Name des lokalen Ollama-Modells.
-            base_url: URL zum Ollama-Server (lokal).
-            default_params: Standard-Argumente für jeden Call (z.B. temperature).
-        """
-        self.default_params = default_params or {}
-        self.client = Ollama(
+        self.client = ChatOllama(
             model=model,
             base_url=base_url,
-            **self.default_params
+            **(default_params or {})
+        )
+
+        self.memory = memory or ConversationSummaryMemory(
+            llm=self.client,
+            return_messages=True,
+            output_key="output"
         )
 
     def send_prompt(self, prompt: str, **kwargs) -> str:
-        # Merge default_params mit call-spezifischen overrides
-        call_params = {**self.default_params, **kwargs}
+        # Geschichte laden und konvertieren
+        history = self.memory.load_memory_variables({})["history"]
+        messages = [self._convert_message_to_tuple(msg) for msg in history]
+        messages.append(("human", prompt))
 
-        # Einfache LangChain-Methode
-        response = self.client(prompt, **call_params)
+        # LLM aufrufen und Kontext speichern
+        response = self.client.invoke(messages, **kwargs)
+        self.memory.save_context({"input": prompt}, {"output": response.content})
 
-        # Bei Bedarf noch Post-Processing hier durchführen
-        return response
+        return response.content

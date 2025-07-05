@@ -7,10 +7,12 @@ from ocht.core.migration import migrate_to
 from ocht.core.version import get_version
 
 
-@click.group()
-def cli():
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx: click.Context):
     """Modulare Python-TUI zur Steuerung von LLMs via LangChain."""
-    pass
+    if ctx.invoked_subcommand is None:
+        start_chat()
 
 
 @cli.command()
