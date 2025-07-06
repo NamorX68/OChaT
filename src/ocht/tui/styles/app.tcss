@@ -1,7 +1,7 @@
 Screen {
-        layout: vertical;
-        background: $surface;
-    }
+    layout: vertical;
+    background: $surface;
+}
 
 Header {
     dock: top;
@@ -40,8 +40,8 @@ Footer {
 .message-row {
     height: auto;
     width: 100%;
-    margin: 0;
-    padding: 0;
+    margin: 0 1; /* Verringerte Margin zwischen den Bubbles */
+    padding: 0 1; /* Verringertes Padding für kleinere Lücken innerhalb der Zeilen */
 }
 
 .message-row.user {
@@ -54,7 +54,7 @@ Footer {
 
 .bubble {
     padding: 1 2;
-    margin: 1;
+    margin: 0 1; /* Verringerte Margin zwischen den Bubbles */
     max-width: 70%;
     min-height: 3;
 }

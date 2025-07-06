@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from ocht.core.models import LLMProviderConfig
 
 
-def create_llm_provider_config(db: Session, name: str, api_key: str) -> LLMProviderConfig:
+def create_llm_provider_config(db: Session, name: str, api_key: str, endpoint: Optional[str] = None, default_model: Optional[str] = None) -> LLMProviderConfig:
     """
     Creates a new LLM provider config.
 
@@ -15,15 +15,19 @@ def create_llm_provider_config(db: Session, name: str, api_key: str) -> LLMProvi
         db (Session): The database session.
         name (str): The name of the LLM provider.
         api_key (str): The API key for the LLM provider.
+        endpoint (Optional[str], optional): The endpoint URL for the LLM provider. Default is None.
+        default_model (Optional[str], optional): The default model for the LLM provider. Default is None.
 
     Returns:
         LLMProviderConfig: Das erstellte Konfigurations-Objekt.
     """
     llm_provider_config = LLMProviderConfig(
-        name=name,
-        api_key=api_key,
-        created_at=datetime.now(),
-        updated_at=datetime.now()
+        prov_name=name,
+        prov_api_key=api_key,
+        prov_endpoint=endpoint,
+        prov_default_model=default_model,
+        prov_created_at=datetime.now(),
+        prov_updated_at=datetime.now()
     )
     db.add(llm_provider_config)
     db.commit()
@@ -42,7 +46,7 @@ def get_llm_provider_config_by_id(db: Session, config_id: int) -> Optional[LLMPr
     Returns:
         Optional[LLMProviderConfig]: Das Konfigurations-Objekt mit der angegebenen ID oder None, wenn nicht gefunden.
     """
-    statement = select(LLMProviderConfig).where(LLMProviderConfig.id == config_id)
+    statement = select(LLMProviderConfig).where(LLMProviderConfig.prov_id == config_id)
     result = db.exec(statement)
     return result.one_or_none()
 
@@ -58,7 +62,7 @@ def get_all_llm_provider_configs(db: Session, limit: Optional[int] = None, offse
 
     Returns:
         list[LLMProviderConfig]: A list of LLM provider configuration objects.
-    
+
     Raises:
         ValueError: If limit or offset are negative.
     """
@@ -74,7 +78,7 @@ def get_all_llm_provider_configs(db: Session, limit: Optional[int] = None, offse
     return db.exec(statement).all()
 
 
-def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] = None, api_key: Optional[str] = None) -> Optional[
+def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] = None, api_key: Optional[str] = None, endpoint: Optional[str] = None, default_model: Optional[str] = None) -> Optional[
     LLMProviderConfig]:
     """
     Updates an existing LLM provider configuration.
@@ -84,6 +88,8 @@ def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] 
         config_id (int): The ID of the configuration.
         name (Optional[str], optional): Der neue Name für die Konfiguration. Standard ist None.
         api_key (Optional[str], optional): Der neue API-Schlüssel für die Konfiguration. Standard ist None.
+        endpoint (Optional[str], optional): Der neue Endpoint für die Konfiguration. Standard ist None.
+        default_model (Optional[str], optional): Das neue Standard-Modell für die Konfiguration. Standard ist None.
 
     Returns:
         Optional[LLMProviderConfig]: Das aktualisierte Konfigurations-Objekt oder None, wenn nicht gefunden.
@@ -93,10 +99,14 @@ def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] 
         return None
 
     if name is not None:
-        config.name = name
+        config.prov_name = name
     if api_key is not None:
-        config.api_key = api_key
-    config.updated_at = datetime.now()
+        config.prov_api_key = api_key
+    if endpoint is not None:
+        config.prov_endpoint = endpoint
+    if default_model is not None:
+        config.prov_default_model = default_model
+    config.prov_updated_at = datetime.now()
 
     db.add(config)
     db.commit()
