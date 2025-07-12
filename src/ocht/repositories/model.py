@@ -70,12 +70,11 @@ def get_all_models(db: Session, limit: Optional[int] = None, offset: Optional[in
     if offset is not None and offset < 0:
         raise ValueError("Offset cannot be negative.")
 
-    query = db.query(Model).offset(offset)
+    statement = select(Model)
     if limit is not None:
-        query = query.limit(limit)
+        statement = statement.limit(limit).offset(offset)
 
-    models = query.all()
-    return models
+    return db.exec(statement).all()
 
 
 def update_model(db: Session, model_name: str, new_model_name: Optional[str] = None,

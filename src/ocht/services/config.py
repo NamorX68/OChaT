@@ -1,11 +1,11 @@
 def open_conf():
-    """Öffnet bzw. lädt die Konfiguration (DB oder YAML)."""
+    """Opens or loads the configuration (DB or YAML)."""
     pass
 
 def export_conf(path: str):
-    """Exportiert Einstellungen nach YAML/JSON."""
+    """Exports settings to YAML/JSON."""
     pass
 
 def import_conf(path: str):
-    """Importiert Einstellungen aus YAML/JSON."""
+    """Imports settings from YAML/JSON."""
     pass

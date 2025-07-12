@@ -1,3 +1,3 @@
 def create_workspace(name: str):
-    """Erstellt das Workspace-Verzeichnis, Config & DB-Schema."""
+    """Creates the workspace directory, config & DB schema."""
     pass

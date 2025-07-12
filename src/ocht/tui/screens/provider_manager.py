@@ -4,12 +4,11 @@ from textual.screen import Screen, ModalScreen
 from textual.binding import Binding
 from typing import List, Optional
 from ocht.core.models import LLMProviderConfig
-from ocht.core.db import get_session
-from ocht.repositories.llm_provider_config import (
-    get_all_llm_provider_configs,
-    create_llm_provider_config,
-    update_llm_provider_config,
-    delete_llm_provider_config
+from ocht.services.provider_manager import (
+    get_providers_with_info,
+    create_provider_with_validation,
+    update_provider_with_validation,
+    delete_provider_with_checks
 )
 
 
@@ -107,31 +106,30 @@ class ProviderEditScreen(ModalScreen):
             return
 
         try:
-            for session in get_session():
-                if self.is_edit_mode:
-                    # Update existing provider using repository function
-                    updated_provider = update_llm_provider_config(
-                        session, 
-                        self.provider.prov_id, 
-                        name=name, 
-                        api_key=api_key,
-                        endpoint=endpoint,
-                        default_model=default_model
-                    )
-                    if updated_provider:
-                        self.dismiss(updated_provider)
-                    else:
-                        self.notify("Failed to update provider", severity="error")
+            if self.is_edit_mode:
+                # Update existing provider using service function
+                updated_provider = update_provider_with_validation(
+                    self.provider.prov_id,
+                    name=name,
+                    api_key=api_key,
+                    endpoint=endpoint,
+                    default_model=default_model
+                )
+                if updated_provider:
+                    self.dismiss(updated_provider)
                 else:
-                    # Create new provider using repository function
-                    new_provider = create_llm_provider_config(
-                        session, 
-                        name, 
-                        api_key, 
-                        endpoint=endpoint, 
-                        default_model=default_model
-                    )
-                    self.dismiss(new_provider)
+                    self.notify("Failed to update provider", severity="error")
+            else:
+                # Create new provider using service function
+                new_provider = create_provider_with_validation(
+                    name,
+                    api_key=api_key,
+                    endpoint=endpoint,
+                    default_model=default_model
+                )
+                self.dismiss(new_provider)
+        except ValueError as e:
+            self.notify(str(e), severity="error")
         except Exception as e:
             self.notify(f"Error saving provider: {str(e)}", severity="error")
 
@@ -185,13 +183,17 @@ class ProviderManagerScreen(Screen):
     def load_providers(self):
         """Load providers from database and populate the table."""
         try:
-            for session in get_session():
-                self.providers = get_all_llm_provider_configs(session)
+            # Get providers with info using service function
+            provider_data = get_providers_with_info()
+
+            # Extract providers for internal use
+            self.providers = [data['provider'] for data in provider_data]
 
             table = self.query_one("#provider-table", DataTable)
             table.clear()
 
-            for provider in self.providers:
+            for data in provider_data:
+                provider = data['provider']
                 table.add_row(
                     str(provider.prov_id),
                     provider.prov_name,
@@ -265,11 +267,12 @@ class ProviderManagerScreen(Screen):
 
         # Simple confirmation - in a real app you might want a proper confirmation dialog
         try:
-            for session in get_session():
-                if delete_llm_provider_config(session, selected_provider.prov_id):
-                    self.load_providers()
-                    self.notify(f"Provider '{selected_provider.prov_name}' deleted successfully", severity="information")
-                else:
-                    self.notify("Failed to delete provider", severity="error")
+            if delete_provider_with_checks(selected_provider.prov_id):
+                self.load_providers()
+                self.notify(f"Provider '{selected_provider.prov_name}' deleted successfully", severity="information")
+            else:
+                self.notify("Failed to delete provider", severity="error")
+        except ValueError as e:
+            self.notify(str(e), severity="error")
         except Exception as e:
             self.notify(f"Error deleting provider: {str(e)}", severity="error")

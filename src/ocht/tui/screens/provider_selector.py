@@ -4,8 +4,7 @@ from textual.screen import ModalScreen
 from textual.binding import Binding
 from typing import List, Optional
 from ocht.core.models import LLMProviderConfig
-from ocht.core.db import get_session
-from ocht.repositories.llm_provider_config import get_all_llm_provider_configs
+from ocht.services.provider_manager import get_available_providers
 
 
 class ProviderSelectorModal(ModalScreen):
@@ -45,8 +44,8 @@ class ProviderSelectorModal(ModalScreen):
     def load_providers(self):
         """Load providers from database and populate the list."""
         try:
-            for session in get_session():
-                self.providers = get_all_llm_provider_configs(session)
+            # Get providers using service function
+            self.providers = get_available_providers()
 
             provider_list = self.query_one("#provider-list", ListView)
             provider_list.clear()

@@ -10,7 +10,7 @@ from ocht.core.version import get_version
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx: click.Context):
-    """Modulare Python-TUI zur Steuerung von LLMs via LangChain."""
+    """Modular Python TUI for controlling LLMs via LangChain."""
     if ctx.invoked_subcommand is None:
         start_chat()
 
@@ -18,58 +18,58 @@ def cli(ctx: click.Context):
 @cli.command()
 @click.argument("name")
 def init(name):
-    """Erstellt einen neuen Chat-Workspace mit Konfigurationsdatei und Historie."""
+    """Creates a new chat workspace with configuration file and history."""
     create_workspace(name)
 
 
 @cli.command()
 def chat():
-    """Startet eine interaktive Chat-Session basierend auf dem aktuellen Workspace."""
+    """Starts an interactive chat session based on the current workspace."""
     start_chat()
 
 
 @cli.command()
 def config():
-    """Öffnet die Konfiguration im Standard-Editor."""
+    """Opens the configuration in the default editor."""
     open_conf()
 
 
 @cli.command()
 @click.argument("datei")
 def export_config(datei):
-    """Exportiert die aktuellen Einstellungen als YAML- oder JSON-Datei."""
+    """Exports the current settings as YAML or JSON file."""
     export_conf(datei)
 
 
 @cli.command()
 @click.argument("datei")
 def import_config(datei):
-    """Importiert Einstellungen aus einer YAML- oder JSON-Datei."""
+    """Imports settings from a YAML or JSON file."""
     import_conf(datei)
 
 
 @cli.command()
 def list_models():
-    """Listet verfügbare LLM-Modelle über LangChain auf."""
+    """Lists available LLM models via LangChain."""
     list_llm_models()
 
 
 @cli.command()
 def sync_models():
-    """Synchronisiert die Modell-Metadaten von externen Providern in die Datenbank."""
+    """Synchronizes model metadata from external providers into the database."""
     sync_llm_models()
 
 
 @cli.command()
 @click.argument("zielversion")
 def migrate(zielversion):
-    """Führt Alembic-Migrationen auf die angegebene Zielversion aus."""
+    """Runs Alembic migrations to the specified target version."""
     migrate_to(zielversion)
 
 
 @cli.command()
 def version():
-    """Zeigt die aktuelle CLI-/Paket-Version an."""
+    """Shows the current CLI/package version."""
     version = get_version()
     click.echo(f"OChaT version: {version}")
 
@@ -77,7 +77,7 @@ def version():
 @cli.command()
 @click.argument("command", required=False)
 def help(command):
-    """Zeigt detaillierte Hilfe zu einem Command an."""
+    """Shows detailed help for a command."""
     if command:
         click.echo(f"Help for {command}")
     else:

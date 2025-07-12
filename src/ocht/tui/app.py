@@ -6,6 +6,8 @@ from ocht.adapters.ollama import OllamaAdapter
 from ocht.tui.widgets.chat_bubble import ChatBubble
 from ocht.tui.screens.provider_manager import ProviderManagerScreen
 from ocht.tui.screens.provider_selector import ProviderSelectorModal
+from ocht.tui.screens.model_selector import ModelSelectorModal
+from ocht.tui.screens.model_manager import ModelManagerScreen
 
 class ChatApp(App):
     """Elegant Chat Terminal User Interface"""
@@ -90,10 +92,20 @@ class ChatApp(App):
                     if result:
                         self.add_note(f"✅ Selected Provider: {result.prov_name} (ID: {result.prov_id})")
 
-                self.push_screen(ProviderSelectorModal(), handle_provider_selection)
+                await self.push_screen(ProviderSelectorModal(), handle_provider_selection)
 
             case "/provider-manage":
-                self.push_screen(ProviderManagerScreen())
+                await self.push_screen(ProviderManagerScreen())
+
+            case "/model":
+                def handle_model_selection(result):
+                    if result:
+                        self.add_note(f"✅ Selected model: {result.model_name} (ID: {result.model_id})")
+
+                await self.push_screen(ModelSelectorModal(), handle_model_selection)
+
+            case "/model-manage":
+                await self.push_screen(ModelManagerScreen())
 
             case "/help":
                 help_text = """🤖 **Commands:**
@@ -102,6 +114,8 @@ class ChatApp(App):
 • `/clear` - Clear chat history
 • `/provider` - Select LLM provider
 • `/provider-manage` - Manage LLM providers
+• `/model` - Select LLM Model
+• `/model-manage` - Manage LLM Models
 • `/help` - Show this help
 
 **Keyboard shortcuts:**
