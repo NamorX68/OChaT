@@ -1,21 +1,58 @@
 import requests
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TypeVar, Callable
 from ocht.core.db import get_session
 from ocht.repositories.model import (
-    get_all_models, 
-    create_model, 
-    get_model_by_name, 
-    update_model, 
+    get_all_models,
+    create_model,
+    get_model_by_name,
+    update_model,
     delete_model
 )
-from ocht.repositories.llm_provider_config import get_all_llm_provider_configs
+from ocht.repositories.llm_provider_config import get_all_llm_provider_configs, get_llm_provider_config_by_id
 from ocht.core.models import Model, LLMProviderConfig
+
+T = TypeVar('T')
+
+
+def _with_session(func: Callable) -> T:
+    """Helper function to execute database operations with session."""
+    db = next(get_session())
+    return func(db)
+
+
+def _validate_model_name(name: str) -> str:
+    """Validates and normalizes model name."""
+    if not name or not name.strip():
+        raise ValueError("Model name is required")
+    return name.strip()
+
+
+def _check_model_name_uniqueness(db, name: str, exclude_name: Optional[str] = None) -> None:
+    """Checks if model name is unique."""
+    existing_model = get_model_by_name(db, name)
+    if existing_model and name != exclude_name:
+        raise ValueError(f"Model '{name}' already exists")
+
+
+def _ensure_model_exists(db, model_name: str) -> Model:
+    """Ensures model exists and returns it."""
+    model = get_model_by_name(db, model_name)
+    if not model:
+        raise ValueError(f"Model '{model_name}' not found")
+    return model
+
+
+def _ensure_provider_exists(db, provider_id: int) -> LLMProviderConfig:
+    """Ensures provider exists and returns it."""
+    provider = get_llm_provider_config_by_id(db, provider_id)
+    if not provider:
+        raise ValueError(f"Provider with ID {provider_id} does not exist")
+    return provider
 
 
 def list_llm_models() -> List[Model]:
     """Reads available models from DB/Cache and returns them."""
-    for db in get_session():
-        return get_all_models(db)
+    return _with_session(get_all_models)
 
 
 def sync_llm_models() -> dict:
@@ -25,17 +62,16 @@ def sync_llm_models() -> dict:
         'total_processed': 0
     }
 
-    for db in get_session():
-        # Get all providers
+    def _sync_models(db):
         providers = get_all_llm_provider_configs(db)
-
         for provider in providers:
             if provider.prov_name.lower() == 'ollama':
                 ollama_result = _sync_ollama_models(db, provider)
                 results['ollama'] = ollama_result
                 results['total_processed'] += ollama_result['added'] + ollama_result['skipped']
+        return results
 
-    return results
+    return _with_session(_sync_models)
 
 
 def _sync_ollama_models(db, provider) -> dict:
@@ -65,7 +101,7 @@ def _sync_ollama_models(db, provider) -> dict:
             model_size = model_info.get('size', 0)
             modified_at = model_info.get('modified_at', '')
 
-            size_gb = round(model_size / (1024**3), 2) if model_size > 0 else 0
+            size_gb = round(model_size / (1024 ** 3), 2) if model_size > 0 else 0
             description = f"Ollama model, Size: {size_gb} GB"
             if modified_at:
                 description += f", Modified: {modified_at}"
@@ -93,16 +129,14 @@ def _sync_ollama_models(db, provider) -> dict:
     return result
 
 
-# === TUI Business Logic Functions ===
-
 def get_models_with_provider_info() -> List[Dict[str, Any]]:
     """
     Gets models with provider information for UI display.
-
     Returns:
         List[Dict]: List of dictionaries with model and provider information
     """
-    for db in get_session():
+
+    def _get_models_info(db):
         models = get_all_models(db)
         providers = get_all_llm_provider_configs(db)
 
@@ -117,132 +151,103 @@ def get_models_with_provider_info() -> List[Dict[str, Any]]:
             for model in models
         ]
 
+    return _with_session(_get_models_info)
+
 
 def create_model_with_validation(name: str, provider_id: int, description: Optional[str] = None,
-                                version: Optional[str] = None, params: Optional[str] = None) -> Model:
+                                 version: Optional[str] = None, params: Optional[str] = None) -> Model:
     """
     Creates model with business logic validation.
-
     Args:
         name: Model name
         provider_id: Provider ID
         description: Optional description
         version: Optional version
         params: Optional parameters
-
     Returns:
         Model: The created model
-
     Raises:
         ValueError: On validation errors
     """
-    if not name or not name.strip():
-        raise ValueError("Model name is required")
+    validated_name = _validate_model_name(name)
 
-    name = name.strip()
-
-    for db in get_session():
-        # Check if model already exists
-        existing_model = get_model_by_name(db, name)
-        if existing_model:
-            raise ValueError(f"Model '{name}' already exists")
-
-        # Validate provider exists
-        providers = get_all_llm_provider_configs(db)
-        if not any(p.prov_id == provider_id for p in providers):
-            raise ValueError(f"Provider with ID {provider_id} does not exist")
+    def _create_model(db):
+        _check_model_name_uniqueness(db, validated_name)
+        _ensure_provider_exists(db, provider_id)
 
         return create_model(
             db=db,
-            model_name=name,
+            model_name=validated_name,
             model_provider_id=provider_id,
             model_description=description,
             model_version=version,
             model_params=params
         )
 
+    return _with_session(_create_model)
+
 
 def update_model_with_validation(old_name: str, new_name: Optional[str] = None,
-                                provider_id: Optional[int] = None, description: Optional[str] = None,
-                                version: Optional[str] = None, params: Optional[str] = None) -> Optional[Model]:
+                                 provider_id: Optional[int] = None, description: Optional[str] = None,
+                                 version: Optional[str] = None, params: Optional[str] = None) -> Optional[Model]:
     """
     Updates model with business logic validation.
-
     Args:
         old_name: Current model name
-        new_name: New model name (optional)
+        new_name: New model name (optional, None means don't change)
         provider_id: New provider ID (optional)
         description: New description (optional)
         version: New version (optional)
         params: New parameters (optional)
-
     Returns:
         Optional[Model]: The updated model or None if not found
-
     Raises:
         ValueError: On validation errors
     """
-    if not old_name or not old_name.strip():
-        raise ValueError("Current model name is required")
+    validated_old_name = _validate_model_name(old_name)
 
-    for db in get_session():
-        # Check if model exists
-        existing_model = get_model_by_name(db, old_name.strip())
-        if not existing_model:
-            raise ValueError(f"Model '{old_name}' not found")
+    def _update_model(db):
+        existing_model = _ensure_model_exists(db, validated_old_name)
 
-        # If new name is provided, check it's valid and not already taken
-        if new_name is not None:
-            new_name = new_name.strip()
-            if not new_name:
-                raise ValueError("New model name cannot be empty")
-
-            if new_name != old_name:
-                existing_with_new_name = get_model_by_name(db, new_name)
-                if existing_with_new_name:
-                    raise ValueError(f"Model '{new_name}' already exists")
+        validated_new_name = new_name
+        if new_name:  # Only validate if new name is provided (not None)
+            validated_new_name = _validate_model_name(new_name)
+            if validated_new_name != validated_old_name:
+                _check_model_name_uniqueness(db, validated_new_name, validated_old_name)
 
         # Validate provider exists if provided
         if provider_id is not None:
-            providers = get_all_llm_provider_configs(db)
-            if not any(p.prov_id == provider_id for p in providers):
-                raise ValueError(f"Provider with ID {provider_id} does not exist")
+            _ensure_provider_exists(db, provider_id)
 
         return update_model(
             db=db,
-            model_name=old_name.strip(),
-            new_model_name=new_name,
+            model_name=validated_old_name,
+            new_model_name=validated_new_name,
             model_provider_id=provider_id,
             model_description=description,
             model_version=version,
             model_params=params
         )
+
+    return _with_session(_update_model)
 
 
 def delete_model_with_checks(model_name: str) -> bool:
     """
     Deletes model after business logic checks.
-
     Args:
         model_name: Name of the model to delete
-
     Returns:
         bool: True if successfully deleted, False otherwise
-
     Raises:
         ValueError: On validation errors
     """
-    if not model_name or not model_name.strip():
-        raise ValueError("Model name is required")
+    validated_name = _validate_model_name(model_name)
 
-    model_name = model_name.strip()
-
-    for db in get_session():
-        # Check if model exists
-        existing_model = get_model_by_name(db, model_name)
-        if not existing_model:
-            raise ValueError(f"Model '{model_name}' not found")
-
+    def _delete_model(db):
+        _ensure_model_exists(db, validated_name)
         # Here could be additional checks (e.g., if model is in use)
         # For now, we just delete it
-        return delete_model(db, model_name)
+        return delete_model(db, validated_name)
+
+    return _with_session(_delete_model)

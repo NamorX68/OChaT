@@ -10,7 +10,7 @@ packages = { find = { where = ["src"], include = ["ocht*"] } }
 # 3) Projekt‐Metadaten
 [project]
 name = "ocht"
-version = "0.1.0"
+version = "0.1.1"
 description = "Modulare Python-TUI zur Steuerung von LLMs via LangChain"
 authors = [{ name = "Roman Thimian", email = "roman.thimian@me.com" }]
 license = "MIT"

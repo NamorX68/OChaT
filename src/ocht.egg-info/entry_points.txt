@@ -1,0 +1,2 @@
+[console_scripts]
+ocht = ocht.cli:cli
