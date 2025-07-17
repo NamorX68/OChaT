@@ -8,7 +8,7 @@ class OllamaAdapter(LLMAdapter):
 
     def __init__(
         self,
-        model: str = "devstral:24b-q8_0",
+        model: str = "qwen3:30b-a3b",
         base_url: str = "http://localhost:11434",
         default_params: Optional[Dict[str, Any]] = None,
         memory=None,

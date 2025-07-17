@@ -7,7 +7,8 @@ from sqlmodel import Session, select
 from ocht.core.models import LLMProviderConfig
 
 
-def create_llm_provider_config(db: Session, name: str, api_key: str, endpoint: Optional[str] = None, default_model: Optional[str] = None) -> LLMProviderConfig:
+def create_llm_provider_config(db: Session, name: str, api_key: str, endpoint: Optional[str] = None,
+                               default_model: Optional[str] = None) -> LLMProviderConfig:
     """
     Creates a new LLM provider config.
 
@@ -78,7 +79,8 @@ def get_all_llm_provider_configs(db: Session, limit: Optional[int] = None, offse
     return db.exec(statement).all()
 
 
-def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] = None, api_key: Optional[str] = None, endpoint: Optional[str] = None, default_model: Optional[str] = None) -> Optional[
+def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] = None, api_key: Optional[str] = None,
+                               endpoint: Optional[str] = None, default_model: Optional[str] = None) -> Optional[
     LLMProviderConfig]:
     """
     Updates an existing LLM provider configuration.

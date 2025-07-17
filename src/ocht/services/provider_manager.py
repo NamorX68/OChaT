@@ -93,10 +93,10 @@ def create_provider_with_validation(name: str, api_key: Optional[str] = None,
         _check_provider_name_uniqueness(db, validated_name)
         return create_llm_provider_config(
             db=db,
-            prov_name=validated_name,
-            prov_api_key=api_key,
-            prov_endpoint=endpoint,
-            prov_default_model=default_model
+            name=validated_name,
+            api_key=api_key,
+            endpoint=endpoint,
+            default_model=default_model
         )
 
     return _with_session(_create_provider)
@@ -125,16 +125,16 @@ def update_provider_with_validation(provider_id: int, name: Optional[str] = None
         validated_name = name
         if name:  # Only validate if name is provided (not None)
             validated_name = _validate_provider_name(name)
-            if validated_name.lower() != existing_provider.prov_name.lower():
+            if validated_name.lower() != existing_provider.name.lower():
                 _check_provider_name_uniqueness(db, validated_name, provider_id)
 
         return update_llm_provider_config(
             db=db,
-            provider_id=provider_id,
-            prov_name=validated_name,
-            prov_api_key=api_key,
-            prov_endpoint=endpoint,
-            prov_default_model=default_model
+            config_id=provider_id,
+            name=validated_name,
+            api_key=api_key,
+            endpoint=endpoint,
+            default_model=default_model
         )
 
     return _with_session(_update_provider)

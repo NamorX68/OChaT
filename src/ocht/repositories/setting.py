@@ -3,7 +3,7 @@ from typing import Optional, Sequence
 
 from sqlmodel import Session, select
 
-from src.ocht.core.models import Setting
+from ocht.core.models import Setting
 
 
 def create_setting(db: Session, key: str, value: str) -> Setting:
@@ -18,7 +18,7 @@ def create_setting(db: Session, key: str, value: str) -> Setting:
     Returns:
         Setting: The newly created setting object.
     """
-    db_setting = Setting(key=key, value=value)
+    db_setting = Setting(setting_key=key, setting_value=value)
     db.add(db_setting)
     db.commit()
     db.refresh(db_setting)
@@ -37,7 +37,7 @@ def get_setting_by_key(db: Session, key: str) -> Optional[Setting]:
     Returns:
         Optional[Setting]: The setting object with the specified key or None if not found.
     """
-    statement = select(Setting).where(Setting.key == key)
+    statement = select(Setting).where(Setting.setting_key == key)
     result = db.exec(statement)
     return result.one_or_none()
 

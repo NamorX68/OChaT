@@ -1,3 +1,5 @@
+
+
 def open_conf():
     """Opens or loads the configuration (DB or YAML)."""
     pass

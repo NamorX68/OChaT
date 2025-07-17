@@ -1,0 +1,46 @@
+/* Settings Manager Screen Styles */
+
+.settings-manager-screen {
+    padding: 1;
+}
+
+.help-text {
+    color: $text-muted;
+    margin-bottom: 1;
+    text-align: center;
+}
+
+#settings-table {
+    height: 1fr;
+    margin-bottom: 1;
+    border: solid $primary;
+}
+
+.settings-toolbar {
+    height: 3;
+    align: center middle;
+}
+
+.settings-toolbar Button {
+    margin: 0 1;
+}
+
+/* DataTable specific styling */
+DataTable {
+    background: $surface;
+}
+
+DataTable > .datatable--header {
+    background: $primary;
+    color: $text;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: $accent;
+    color: $text;
+}
+
+DataTable > .datatable--hover {
+    background: $surface-lighten-1;
+}

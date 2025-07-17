@@ -8,6 +8,7 @@ from ocht.tui.screens.provider_manager import ProviderManagerScreen
 from ocht.tui.screens.provider_selector import ProviderSelectorModal
 from ocht.tui.screens.model_selector import ModelSelectorModal
 from ocht.tui.screens.model_manager import ModelManagerScreen
+from ocht.tui.screens.settings_manager import SettingsManagerScreen
 
 class ChatApp(App):
     """Elegant Chat Terminal User Interface"""
@@ -31,7 +32,7 @@ class ChatApp(App):
         """
         super().__init__(*args, **kwargs)
         self.adapter = OllamaAdapter(
-            model="devstral:24b-q8_0",
+            model="qwen3:30b-a3b",
             default_params={"temperature": 0.5}
         )
         self.notifications = []
@@ -107,6 +108,9 @@ class ChatApp(App):
             case "/model-manage":
                 await self.push_screen(ModelManagerScreen())
 
+            case "/settings":
+                await self.push_screen(SettingsManagerScreen())
+
             case "/help":
                 help_text = """🤖 **Commands:**
 
@@ -116,6 +120,7 @@ class ChatApp(App):
 • `/provider-manage` - Manage LLM providers
 • `/model` - Select LLM Model
 • `/model-manage` - Manage LLM Models
+• `/settings` - Manage application settings
 • `/help` - Show this help
 
 **Keyboard shortcuts:**
@@ -152,7 +157,7 @@ class ChatApp(App):
             error_msg = f"❌ **Error:** {str(e)}\n\nPlease check your Ollama installation."
             self._add_message(error_msg, "bot", "error")
 
-    def _add_message(self, message: str, sender: str, style: str = "") -> Horizontal:
+    def _add_message(self, message: str, sender: str, style: str="") -> Horizontal:
         """Add a new chat message and scroll immediately.
 
         Args:
