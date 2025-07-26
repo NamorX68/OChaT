@@ -9,6 +9,8 @@ from ocht.tui.screens.provider_selector import ProviderSelectorModal
 from ocht.tui.screens.model_selector import ModelSelectorModal
 from ocht.tui.screens.model_manager import ModelManagerScreen
 from ocht.tui.screens.settings_manager import SettingsManagerScreen
+from ocht.tui.screens.workspace_manager import WorkspaceManagerScreen
+from ocht.tui.screens.workspace_selector import WorkspaceSelectorModal
 
 class ChatApp(App):
     """Elegant Chat Terminal User Interface"""
@@ -111,6 +113,16 @@ class ChatApp(App):
             case "/settings":
                 await self.push_screen(SettingsManagerScreen())
 
+            case "/workspace":
+                def handle_workspace_selection(result):
+                    if result:
+                        self.add_note(f"✅ Selected Workspace: {result.work_name} (ID: {result.work_id})")
+
+                await self.push_screen(WorkspaceSelectorModal(), handle_workspace_selection)
+
+            case "/workspace-manage":
+                await self.push_screen(WorkspaceManagerScreen())
+
             case "/help":
                 help_text = """🤖 **Commands:**
 
@@ -120,6 +132,8 @@ class ChatApp(App):
 • `/provider-manage` - Manage LLM providers
 • `/model` - Select LLM Model
 • `/model-manage` - Manage LLM Models
+• `/workspace` - Select workspace
+• `/workspace-manage` - Manage workspaces
 • `/settings` - Manage application settings
 • `/help` - Show this help
 
