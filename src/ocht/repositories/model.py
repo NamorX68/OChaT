@@ -8,7 +8,8 @@ from ocht.core.models import Model
 
 def create_model(db: Session, model_name: str, model_provider_id: int,
                  model_description: Optional[str] = None, model_version: Optional[str] = None,
-                 model_params: Optional[str] = None) -> Model:
+                 model_params: Optional[str] = None, is_available: bool = True,
+                 last_checked: Optional[datetime] = None) -> Model:
     """
     Creates a new model.
 
@@ -19,6 +20,8 @@ def create_model(db: Session, model_name: str, model_provider_id: int,
         model_description (Optional[str]): Description of the model. Default is None.
         model_version (Optional[str]): Version identifier of the model. Default is None.
         model_params (Optional[str]): JSON string with default parameters. Default is None.
+        is_available (bool): Whether the model is available on disk. Default is True.
+        last_checked (Optional[datetime]): Last time availability was checked. Default is None.
 
     Returns:
         Model: The newly created model object.
@@ -28,7 +31,9 @@ def create_model(db: Session, model_name: str, model_provider_id: int,
         model_provider_id=model_provider_id,
         model_description=model_description,
         model_version=model_version,
-        model_params=model_params
+        model_params=model_params,
+        is_available=is_available,
+        last_checked=last_checked
     )
     db.add(db_model)
     db.commit()
@@ -79,7 +84,8 @@ def get_all_models(db: Session, limit: Optional[int] = None, offset: Optional[in
 
 def update_model(db: Session, model_name: str, new_model_name: Optional[str] = None,
                  model_provider_id: Optional[int] = None, model_description: Optional[str] = None,
-                 model_version: Optional[str] = None, model_params: Optional[str] = None) -> Optional[Model]:
+                 model_version: Optional[str] = None, model_params: Optional[str] = None,
+                 is_available: Optional[bool] = None, last_checked: Optional[datetime] = None) -> Optional[Model]:
     """
     Updates an existing model.
 
@@ -91,6 +97,8 @@ def update_model(db: Session, model_name: str, new_model_name: Optional[str] = N
         model_description (Optional[str]): Updated description of the model. Default is None.
         model_version (Optional[str]): Updated version identifier of the model. Default is None.
         model_params (Optional[str]): Updated JSON string with default parameters. Default is None.
+        is_available (Optional[bool]): Updated availability status. Default is None.
+        last_checked (Optional[datetime]): Updated last checked timestamp. Default is None.
 
     Returns:
         Optional[Model]: The updated model object or None if not found.
@@ -109,6 +117,10 @@ def update_model(db: Session, model_name: str, new_model_name: Optional[str] = N
         model.model_version = model_version
     if model_params is not None:
         model.model_params = model_params
+    if is_available is not None:
+        model.is_available = is_available
+    if last_checked is not None:
+        model.last_checked = last_checked
 
     model.model_updated_at = datetime.now()
 
@@ -138,3 +150,18 @@ def delete_model(db: Session, model_name: str) -> bool:
     db.commit()
 
     return True
+
+
+def get_models_by_provider(db: Session, provider_id: int) -> Sequence[Model]:
+    """
+    Retrieves all models for a specific provider.
+
+    Args:
+        db (Session): The database session.
+        provider_id (int): The provider ID to filter by.
+
+    Returns:
+        Sequence[Model]: A list of model objects for the provider.
+    """
+    statement = select(Model).where(Model.model_provider_id == provider_id)
+    return db.exec(statement).all()

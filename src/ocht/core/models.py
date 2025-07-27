@@ -85,6 +85,8 @@ class Model(SQLModel, table=True):
         model_created_at (datetime): Timestamp when the model entry was created.
         model_updated_at (datetime): Timestamp when the model entry was last updated.
         model_params (Optional[str]): JSON string with default parameters (e.g., temperature).
+        is_available (bool): Whether the model is currently available on disk.
+        last_checked (Optional[datetime]): Last time availability was checked.
     """
     model_name: str = Field(primary_key=True)
     model_provider_id: int = Field(foreign_key="llmproviderconfig.prov_id")
@@ -93,6 +95,8 @@ class Model(SQLModel, table=True):
     model_created_at: datetime = Field(default_factory=datetime.now)
     model_updated_at: datetime = Field(default_factory=datetime.now)
     model_params: Optional[str] = None
+    is_available: bool = Field(default=True)
+    last_checked: Optional[datetime] = None
 
 
 class Setting(SQLModel, table=True):
