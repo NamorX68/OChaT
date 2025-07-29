@@ -26,7 +26,7 @@ dependencies = [
   "ollama>=0.4.8",
   "rich>=14.0.0",
   "sqlmodel>=0.0.24",
-  "textual>=3.2.0"
+  "textual>=3.2.0",
 ]
 
 # 4) CLI‐EntryPoint

@@ -110,3 +110,47 @@ Workspaces are self-contained chat environments with their own configuration and
 
 ## Development Guidelines
 - Merke Debug in der TUI Anwendung nur mit self.notify() erstellen
+
+## Translation Guidelines
+- Alle Texte in der Anwendung in englisch erstellen.
+
+## Adapter Roadmap & Next Steps
+
+### Phase 1: Memory System Improvements (High Priority)
+- [ ] Implement HybridMemoryStrategy
+  - Keep last 8-10 messages completely (for code context)
+  - Smart summarization for older messages
+  - Code blocks retained longer than natural text
+  - Function names/references separate indexing
+  - Token-aware context management
+
+### Phase 2: Configuration & Health Monitoring (Medium Priority)
+- [ ] Provider-agnostic AdapterConfig class
+  - temperature, max_tokens, context_window
+  - streaming_enabled, memory_strategy
+- [ ] Health check system
+  - Model availability testing
+  - Response time monitoring
+  - Streaming capability validation
+- [ ] Error recovery & retry logic
+  - Exponential backoff
+  - Circuit breaker pattern
+  - Graceful degradation (stream → async → error)
+
+### Phase 3: New Adapters (Medium Priority)
+- [ ] OpenAI-compatible adapter (OpenAI, Groq, local APIs)
+- [ ] MLX-LM adapter (Apple Silicon local models)
+- [ ] Anthropic Claude adapter (API)
+
+### Phase 4: Advanced Features (Low Priority)
+- [ ] Context-aware parameter adjustment
+- [ ] Multi-model conversation support
+- [ ] Adapter performance metrics
+- [ ] Custom memory strategies per use case
+
+### Current Status (2025-07-29)
+✅ Base LLMAdapter with async/sync/stream methods
+✅ Enhanced OllamaAdapter with streaming support
+✅ TUI streaming implementation with live updates
+✅ Mouse escape sequence filtering
+🟡 Memory system needs improvement (current: basic ConversationSummaryMemory)

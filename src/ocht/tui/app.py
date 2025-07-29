@@ -1,9 +1,8 @@
 import asyncio
+import os
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Input, Static, Button
 from textual.containers import VerticalScroll, Horizontal, Vertical
-from textual.screen import ModalScreen
-from ocht.adapters.ollama import OllamaAdapter
 from ocht.tui.widgets.chat_bubble import ChatBubble
 from ocht.tui.screens.provider_manager import ProviderManagerScreen
 from ocht.tui.screens.provider_selector import ProviderSelectorModal
@@ -21,6 +20,9 @@ class ChatApp(App):
     TITLE = "OChaT"
 
     CSS_PATH = "styles/app.tcss"
+    
+    # Configure mouse and input handling to prevent escape sequences
+    ENABLE_COMMAND_PALETTE = False
     
 
     BINDINGS = [
@@ -73,7 +75,7 @@ class ChatApp(App):
                 await self._show_initial_model_selection()
 
     async def on_input_submitted(self, message: Input.Submitted) -> None:
-        """Handle input submission.
+        """Handle input submission with mouse escape sequence filtering.
 
         Args:
             message (Input.Submitted): The submitted input message.
@@ -83,11 +85,53 @@ class ChatApp(App):
 
         if not prompt:
             return
+        
+        # Filter out mouse escape sequences and control characters
+        if self._is_mouse_escape_sequence(prompt):
+            # Ignore mouse escape sequences silently
+            return
 
         if prompt.startswith("/"):
             await self._handle_command(prompt)
         else:
             await self._process_prompt(prompt)
+    
+    def _is_mouse_escape_sequence(self, text: str) -> bool:
+        """Check if text contains mouse escape sequences or control characters.
+        
+        Args:
+            text (str): The text to check.
+            
+        Returns:
+            bool: True if text contains mouse escape sequences.
+        """
+        # Allow disabling mouse filtering via environment variable for debugging
+        if os.getenv('OCHT_DISABLE_MOUSE_FILTER', '').lower() == 'true':
+            return False
+            
+        # Common mouse escape sequence patterns
+        mouse_patterns = [
+            '[<',  # Mouse SGR format like [<35;1341;-1M
+            '\x1b[M',  # Mouse X10 format  
+            '\x1b[<',  # Mouse SGR format with ESC
+            ';-1M',  # Mouse release pattern
+            ';1M',   # Mouse press pattern
+        ]
+        
+        # Check for mouse escape sequences
+        for pattern in mouse_patterns:
+            if pattern in text:
+                return True
+        
+        # Check for control characters (except normal ones like tab, newline)
+        if any(ord(c) < 32 and c not in '\t\n\r' for c in text):
+            return True
+            
+        # Check for escape sequences starting with ESC
+        if text.startswith('\x1b') or '\x1b' in text:
+            return True
+            
+        return False
 
     async def _handle_command(self, command: str) -> None:
         """Handle chat commands with match statement.
@@ -159,7 +203,7 @@ class ChatApp(App):
                 )
 
     async def _process_prompt(self, prompt: str) -> None:
-        """Process the user's prompt.
+        """Process the user's prompt with streaming support.
 
         Args:
             prompt (str): The user's input prompt.
@@ -172,34 +216,76 @@ class ChatApp(App):
         # Add user message and scroll immediately
         self._add_message(prompt, "user")
 
-        # Add typing indicator and scroll immediately
-        typing_bubble = self._add_message("🤔 *thinking...*", "bot", "typing")
+        # Create streaming bot message bubble
+        bot_bubble = self._add_message("", "bot", streaming=True)
+        full_response = ""
 
         try:
-            answer = await asyncio.to_thread(self.adapter.send_prompt, prompt)
-            await typing_bubble.remove()
+            # Stream the response with live updates
+            async for chunk in self.adapter.send_prompt_stream(prompt):
+                full_response += chunk
+                bot_bubble.update_content(full_response)
+                
+                # Auto-scroll to keep up with streaming content
+                container = self.query_one("#chat-container", VerticalScroll)
+                container.scroll_end(animate=False)
+            
+            # Finalize the message (remove typing indicator)
+            bot_bubble.finalize()
+            
+        except Exception as e:
+            # Handle streaming errors gracefully
+            if full_response:
+                # If we got partial content, finalize it first
+                bot_bubble.finalize()
+            else:
+                # Remove empty bubble and show error
+                await bot_bubble.parent.remove()
+            
+            error_msg = f"❌ **Error:** {str(e)}\n\nPlease check your configuration."
+            self._add_message(error_msg, "bot", "error")
+            
+            # Fallback to async method if streaming fails
+            if "stream" in str(e).lower():
+                self.notify("Streaming failed, falling back to standard mode...")
+                await self._process_prompt_fallback(prompt)
+    
+    async def _process_prompt_fallback(self, prompt: str) -> None:
+        """Fallback method using async send_prompt_async instead of streaming.
+        
+        Args:
+            prompt (str): The user's input prompt.
+        """
+        # Add typing indicator
+        typing_bubble = self._add_message("🤔 *thinking...*", "bot", "typing")
+        
+        try:
+            # Use async method instead of streaming
+            answer = await self.adapter.send_prompt_async(prompt)
+            await typing_bubble.parent.remove()
             self._add_message(answer, "bot")
         except Exception as e:
-            await typing_bubble.remove()
+            await typing_bubble.parent.remove()
             error_msg = f"❌ **Error:** {str(e)}\n\nPlease check your configuration."
             self._add_message(error_msg, "bot", "error")
 
-    def _add_message(self, message: str, sender: str, style: str="") -> Horizontal:
+    def _add_message(self, message: str, sender: str, style: str="", streaming: bool = False) -> ChatBubble:
         """Add a new chat message and scroll immediately.
 
         Args:
             message (str): The message content to add.
             sender (str): The sender of the message ('user' or 'bot').
             style (str, optional): Additional style class for the message. Defaults to "".
+            streaming (bool, optional): Enable streaming support for live updates. Defaults to False.
 
         Returns:
-            Horizontal: The message row container that was added.
+            ChatBubble: The chat bubble widget that was added.
         """
         container = self.query_one("#chat-container", VerticalScroll)
 
         # Additional CSS classes based on style
         extra_classes = f" {style}" if style else ""
-        bubble = ChatBubble(message, sender + extra_classes)
+        bubble = ChatBubble(message, sender + extra_classes, streaming=streaming)
 
         # Create container for the message row with the bubble inside
         message_row = Horizontal(bubble, classes=f"message-row {sender}")
@@ -210,7 +296,7 @@ class ChatApp(App):
         # Immediate scrolling without animation
         container.scroll_end(animate=False)
 
-        return message_row
+        return bubble
 
     async def action_clear_chat(self) -> None:
         """Clear the chat history."""
