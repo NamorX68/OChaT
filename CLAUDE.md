@@ -104,3 +104,9 @@ Tests are configured via pytest. Use `uv run pytest` to run the test suite.
 
 ### Workspace Management
 Workspaces are self-contained chat environments with their own configuration and message history. Each workspace references a default model configuration.
+
+## Warnings and Precautions
+- Starte nie die App mit uv run ocht da es sich um eine TUI App handelt die du nicht steuern kannst!
+
+## Development Guidelines
+- Merke Debug in der TUI Anwendung nur mit self.notify() erstellen

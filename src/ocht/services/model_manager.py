@@ -24,8 +24,8 @@ T = TypeVar('T')
 
 def _with_session(func: Callable) -> T:
     """Helper function to execute database operations with session."""
-    db = next(get_session())
-    return func(db)
+    with get_session() as db:
+        return func(db)
 
 
 def _validate_model_name(name: str) -> str:

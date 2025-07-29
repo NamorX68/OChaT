@@ -10,7 +10,7 @@ from ocht.services.provider_manager import get_available_providers
 class ProviderSelectorModal(ModalScreen):
     """Modal dialog for selecting LLM providers."""
 
-    CSS_PATH = "../styles/provider_selector.tcss"
+    CSS_PATH = "../styles/selector_modal.tcss"
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
@@ -26,20 +26,23 @@ class ProviderSelectorModal(ModalScreen):
         """Compose the provider selector modal."""
         yield Vertical(
             Static("🔧 Select a Provider", classes="modal-title"),
-            ListView(id="provider-list", classes="provider-list"),
+            ListView(id="provider-list", classes="selector-list"),
             Horizontal(
                 Button("OK", variant="primary", id="ok-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
                 classes="button-row"
             ),
-            classes="provider-selector-modal"
+            classes="selector-modal"
         )
 
     def on_mount(self):
         """Load providers when modal is mounted."""
-        self.load_providers()
-        # Set focus on the provider list after mounting
-        self.query_one("#provider-list", ListView).focus()
+        try:
+            self.load_providers()
+            # Set focus on the provider list after mounting
+            self.query_one("#provider-list", ListView).focus()
+        except Exception as e:
+            self.notify(f"Error loading providers: {e}", severity="error")
 
     def load_providers(self):
         """Load providers from database and populate the list."""
@@ -54,7 +57,7 @@ class ProviderSelectorModal(ModalScreen):
                 provider_list.append(ListItem(Static("No providers found. Use provider management to add providers.")))
                 return
 
-            for provider in self.providers:
+            for i, provider in enumerate(self.providers):
                 item_text = f"🔧 {provider.prov_name}"
                 if provider.prov_default_model:
                     item_text += f" (Default: {provider.prov_default_model})"
@@ -103,13 +106,15 @@ class ProviderSelectorModal(ModalScreen):
 
     def action_select(self):
         """Select the currently highlighted provider."""
-        if self.selected_provider:
+        # Always use the currently highlighted item, not the stored selection
+        provider_list = self.query_one("#provider-list", ListView)
+        current_index = provider_list.index
+        
+        
+        if current_index is not None and 0 <= current_index < len(self.providers):
+            selected_provider = self.providers[current_index]
+            self.dismiss(selected_provider)
+        elif self.selected_provider:
             self.dismiss(self.selected_provider)
         else:
-            # If no provider is explicitly selected, try to get the highlighted one
-            provider_list = self.query_one("#provider-list", ListView)
-            if provider_list.index is not None and 0 <= provider_list.index < len(self.providers):
-                selected_provider = self.providers[provider_list.index]
-                self.dismiss(selected_provider)
-            else:
-                self.notify("Please select a provider first", severity="warning")
+            self.notify("Please select a provider first", severity="warning")

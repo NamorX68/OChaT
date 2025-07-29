@@ -1,12 +1,13 @@
 import os
 from pathlib import Path
 from typing import Generator
+from contextlib import contextmanager
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
 # Default database path as fallback
-DEFAULT_DB_PATH = "data/ocht.db"
+DEFAULT_DB_PATH = "src/ocht/data/ocht.db"
 
 
 def get_database_url() -> str:
@@ -21,11 +22,25 @@ def get_database_url() -> str:
     if database_url:
         return database_url
 
-    # Fallback: use default path
-    data_dir = Path(DEFAULT_DB_PATH).parent
+    # Fallback: use default path relative to project root
+    # Find project root by looking for pyproject.toml
+    current_path = Path(__file__).resolve()
+    project_root = None
+    
+    for parent in current_path.parents:
+        if (parent / "pyproject.toml").exists():
+            project_root = parent
+            break
+    
+    if project_root is None:
+        # Fallback to current working directory if pyproject.toml not found
+        project_root = Path.cwd()
+    
+    db_path = project_root / DEFAULT_DB_PATH
+    data_dir = db_path.parent
     data_dir.mkdir(exist_ok=True, parents=True)
 
-    return f"sqlite:///{DEFAULT_DB_PATH}"
+    return f"sqlite:///{db_path}"
 
 
 def create_db_engine() -> Engine:
@@ -56,6 +71,7 @@ def init_db(engine: Engine = None) -> None:
     SQLModel.metadata.create_all(engine)
 
 
+@contextmanager
 def get_session(engine: Engine = None) -> Generator[Session, None, None]:
     """
     Creates a new database session.

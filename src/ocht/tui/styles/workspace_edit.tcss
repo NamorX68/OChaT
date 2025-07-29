@@ -1,11 +1,16 @@
 /* Workspace Edit Modal Styles */
+
+WorkspaceEditScreen {
+    align: center middle;
+    layer: notification;
+}
+
 .workspace-edit-modal {
     width: 80;
     height: auto;
     background: $panel;
     border: thick $primary;
     padding: 1;
-    align: center middle;
 }
 
 .modal-title {

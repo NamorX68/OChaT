@@ -1,7 +1,8 @@
 import asyncio
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Input
-from textual.containers import VerticalScroll, Horizontal
+from textual.widgets import Header, Footer, Input, Static, Button
+from textual.containers import VerticalScroll, Horizontal, Vertical
+from textual.screen import ModalScreen
 from ocht.adapters.ollama import OllamaAdapter
 from ocht.tui.widgets.chat_bubble import ChatBubble
 from ocht.tui.screens.provider_manager import ProviderManagerScreen
@@ -11,6 +12,8 @@ from ocht.tui.screens.model_manager import ModelManagerScreen
 from ocht.tui.screens.settings_manager import SettingsManagerScreen
 from ocht.tui.screens.workspace_manager import WorkspaceManagerScreen
 from ocht.tui.screens.workspace_selector import WorkspaceSelectorModal
+from ocht.tui.widgets.confirmation_dialog import ConfirmationDialog, MessageDialog
+from ocht.services.adapter_manager import adapter_manager
 
 class ChatApp(App):
     """Elegant Chat Terminal User Interface"""
@@ -18,6 +21,7 @@ class ChatApp(App):
     TITLE = "OChaT"
 
     CSS_PATH = "styles/app.tcss"
+    
 
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
@@ -33,10 +37,7 @@ class ChatApp(App):
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init__(*args, **kwargs)
-        self.adapter = OllamaAdapter(
-            model="qwen3:30b-a3b",
-            default_params={"temperature": 0.5}
-        )
+        self.adapter = None
         self.notifications = []
 
     def compose(self) -> ComposeResult:
@@ -53,10 +54,23 @@ class ChatApp(App):
         )
         yield Footer()
 
-    def on_mount(self) -> None:
-        """App start: Focus input and show greeting."""
+    async def on_mount(self) -> None:
+        """App start: Focus input and initialize adapter."""
         self.query_one("#chat-input", Input).focus()
-        self._add_message("👋 Hello! I am your AI Assistant. Type `/help` for help.", "bot")
+        
+        # Try to load settings on startup
+        if adapter_manager.load_settings_on_startup():
+            self.adapter = adapter_manager.get_current_adapter()
+            self._add_message("👋 Hello! I am your AI Assistant. Type `/help` for help.", "bot")
+        else:
+            # No settings found, need to configure first
+            self._add_message("⚙️ Welcome! Let's set up your AI assistant first.", "bot")
+            
+            # Check what needs to be configured
+            if adapter_manager.requires_provider_selection():
+                await self._show_initial_provider_selection()
+            elif adapter_manager.requires_model_selection():
+                await self._show_initial_model_selection()
 
     async def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle input submission.
@@ -91,21 +105,13 @@ class ChatApp(App):
                 await self.action_clear_chat()
 
             case "/provider":
-                def handle_provider_selection(result):
-                    if result:
-                        self.add_note(f"✅ Selected Provider: {result.prov_name} (ID: {result.prov_id})")
-
-                await self.push_screen(ProviderSelectorModal(), handle_provider_selection)
+                await self._handle_provider_change()
 
             case "/provider-manage":
                 await self.push_screen(ProviderManagerScreen())
 
             case "/model":
-                def handle_model_selection(result):
-                    if result:
-                        self.add_note(f"✅ Selected model: {result.model_name} (ID: {result.model_id})")
-
-                await self.push_screen(ModelSelectorModal(), handle_model_selection)
+                await self._handle_model_change()
 
             case "/model-manage":
                 await self.push_screen(ModelManagerScreen())
@@ -123,24 +129,26 @@ class ChatApp(App):
             case "/workspace-manage":
                 await self.push_screen(WorkspaceManagerScreen())
 
+
             case "/help":
-                help_text = """🤖 **Commands:**
+                help_text = """# 🤖 OChaT Help
 
-• `/bye`, `/quit`, `/exit` - End chat
-• `/clear` - Clear chat history
-• `/provider` - Select LLM provider
-• `/provider-manage` - Manage LLM providers
-• `/model` - Select LLM Model
-• `/model-manage` - Manage LLM Models
-• `/workspace` - Select workspace
-• `/workspace-manage` - Manage workspaces
-• `/settings` - Manage application settings
-• `/help` - Show this help
+## Commands:
+- `/bye`, `/quit`, `/exit` - End chat
+- `/clear` - Clear chat history
+- `/provider` - Select LLM provider
+- `/provider-manage` - Manage LLM providers
+- `/model` - Select LLM Model
+- `/model-manage` - Manage LLM Models
+- `/workspace` - Select workspace
+- `/workspace-manage` - Manage workspaces
+- `/settings` - Manage application settings
+- `/help` - Show this help
 
-**Keyboard shortcuts:**
-• `Ctrl+C` - Exit program
-• `Ctrl+L` - Clear chat
-• `ESC` - Focus input field"""
+## Keyboard shortcuts:
+- `Ctrl+C` - Exit program
+- `Ctrl+L` - Clear chat
+- `ESC` - Focus input field"""
                 self._add_message(help_text, "bot")
 
             case _:
@@ -156,6 +164,11 @@ class ChatApp(App):
         Args:
             prompt (str): The user's input prompt.
         """
+        # Check if adapter is available
+        if not self.adapter:
+            self._add_message("❌ Kein Adapter konfiguriert. Bitte wählen Sie zuerst einen Provider und ein Modell.", "bot", "error")
+            return
+
         # Add user message and scroll immediately
         self._add_message(prompt, "user")
 
@@ -168,7 +181,7 @@ class ChatApp(App):
             self._add_message(answer, "bot")
         except Exception as e:
             await typing_bubble.remove()
-            error_msg = f"❌ **Error:** {str(e)}\n\nPlease check your Ollama installation."
+            error_msg = f"❌ **Error:** {str(e)}\n\nPlease check your configuration."
             self._add_message(error_msg, "bot", "error")
 
     def _add_message(self, message: str, sender: str, style: str="") -> Horizontal:
@@ -216,3 +229,144 @@ class ChatApp(App):
             message (str): The notification message to display.
         """
         self._add_message(message, "bot", "success")
+
+    async def _show_initial_provider_selection(self) -> None:
+        """Show provider selection during initial setup."""
+        def handle_initial_provider_selection(result):
+            if result:
+                self._add_message(f"✅ Provider selected: {result.prov_name}", "bot", "success")
+                # After provider selection, check if we need model selection
+                if adapter_manager.requires_model_selection():
+                    asyncio.create_task(self._show_initial_model_selection())
+            else:
+                self._add_message("❌ Setup cancelled. Please select a provider to continue.", "bot", "error")
+
+        await self.push_screen(ProviderSelectorModal(), handle_initial_provider_selection)
+
+    async def _show_initial_model_selection(self) -> None:
+        """Show model selection during initial setup."""
+        def handle_initial_model_selection(result):
+            if result:
+                self._add_message(f"✅ Model selected: {result.model_name}", "bot", "success")
+                # Try to create adapter with selected provider and model
+                if adapter_manager.switch_adapter(
+                    adapter_manager.get_current_provider_id() or result.model_provider_id,
+                    result.model_name
+                ):
+                    self.adapter = adapter_manager.get_current_adapter()
+                    self._add_message("🎉 Setup complete! You can now start chatting.", "bot", "success")
+                else:
+                    self._add_message("❌ Failed to initialize adapter. Please check your configuration.", "bot", "error")
+            else:
+                self._add_message("❌ Setup cancelled. Please select a model to continue.", "bot", "error")
+
+        await self.push_screen(ModelSelectorModal(), handle_initial_model_selection)
+
+    async def _handle_provider_change(self) -> None:
+        """Handle provider selection with chat loss warning."""
+        # Show provider selection first
+        def handle_provider_selection(result):
+            if result:
+                # Check if user selected a different provider
+                current_provider_id = adapter_manager.get_current_provider_id()
+                if current_provider_id and result.prov_id != current_provider_id:
+                    # Different provider selected, show confirmation for chat loss
+                    
+                    # Show confirmation dialog for chat loss
+                    def handle_provider_confirmation(confirmed):
+                        if not confirmed:
+                            return
+                        
+                        # Clear current chat when switching providers
+                        if adapter_manager.has_active_chat():
+                            asyncio.create_task(self.action_clear_chat())
+                        
+                        # Update adapter manager and app adapter
+                        if adapter_manager.switch_adapter(result.prov_id, adapter_manager.get_current_model_name() or ""):
+                            self.adapter = adapter_manager.get_current_adapter()
+                            self.add_note(f"✅ Provider gewechselt: {result.prov_name}")
+                        else:
+                            self.add_note("❌ Fehler beim Wechseln des Providers")
+                    
+                    if adapter_manager.has_active_chat():
+                        # Use callback pattern for ConfirmationDialog
+                        self.push_screen(
+                            ConfirmationDialog(
+                                title="Provider wechseln",
+                                message="Beim Wechsel des Providers geht der aktuelle Chat verloren.\nMöchten Sie trotzdem fortfahren?",
+                                confirm_text="Ja, wechseln",
+                                cancel_text="Abbrechen",
+                                confirm_variant="warning"
+                            ),
+                            handle_provider_confirmation
+                        )
+                    else:
+                        # No active chat, switch directly
+                        if adapter_manager.switch_adapter(result.prov_id, adapter_manager.get_current_model_name() or ""):
+                            self.adapter = adapter_manager.get_current_adapter()
+                            self.add_note(f"✅ Provider gewechselt: {result.prov_name}")
+                        else:
+                            self.add_note("❌ Fehler beim Wechseln des Providers")
+                else:
+                    # Same provider or no current provider, no confirmation needed
+                    if adapter_manager.switch_adapter(result.prov_id, adapter_manager.get_current_model_name() or ""):
+                        self.adapter = adapter_manager.get_current_adapter()
+                        self.add_note(f"✅ Provider ausgewählt: {result.prov_name}")
+                    else:
+                        self.add_note("❌ Fehler beim Auswählen des Providers")
+
+        await self.push_screen(ProviderSelectorModal(), handle_provider_selection)
+
+    async def _handle_model_change(self) -> None:
+        """Handle model selection with chat loss warning."""
+        def handle_model_selection(selected_model):
+            if not selected_model:
+                return
+            
+            # Check if same model
+            current_model_name = adapter_manager.get_current_model_name()
+            if current_model_name and selected_model.model_name == current_model_name:
+                self.add_note(f"✅ Modell bereits aktiv: {selected_model.model_name}")
+                return
+            
+            # Show confirmation dialog for chat loss
+            def handle_confirmation(confirmed):
+                if not confirmed:
+                    return
+                
+                # Clear current chat when switching models
+                if adapter_manager.has_active_chat():
+                    asyncio.create_task(self.action_clear_chat())
+                
+                # Switch model
+                provider_id = adapter_manager.get_current_provider_id() or selected_model.model_provider_id
+                
+                if adapter_manager.switch_adapter(provider_id, selected_model.model_name):
+                    self.adapter = adapter_manager.get_current_adapter()
+                    self.add_note(f"✅ Modell gewechselt: {selected_model.model_name}")
+                else:
+                    self.add_note("❌ Fehler beim Wechseln des Modells")
+            
+            if adapter_manager.has_active_chat():
+                # Use callback pattern for ConfirmationDialog
+                self.push_screen(
+                    ConfirmationDialog(
+                        title="Modell wechseln",
+                        message="Beim Wechsel des Modells geht der aktuelle Chat verloren.\nMöchten Sie trotzdem fortfahren?",
+                        confirm_text="Ja, wechseln",
+                        cancel_text="Abbrechen",
+                        confirm_variant="warning"
+                    ),
+                    handle_confirmation
+                )
+            else:
+                # No active chat, switch directly
+                provider_id = adapter_manager.get_current_provider_id() or selected_model.model_provider_id
+                
+                if adapter_manager.switch_adapter(provider_id, selected_model.model_name):
+                    self.adapter = adapter_manager.get_current_adapter()
+                    self.add_note(f"✅ Modell gewechselt: {selected_model.model_name}")
+                else:
+                    self.add_note("❌ Fehler beim Wechseln des Modells")
+        
+        await self.push_screen(ModelSelectorModal(), handle_model_selection)

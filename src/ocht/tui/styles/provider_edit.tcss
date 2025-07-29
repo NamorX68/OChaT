@@ -1,11 +1,16 @@
 /* Provider Edit Modal Styles */
+
+ProviderEditScreen {
+    align: center middle;
+    layer: notification;
+}
+
 .provider-edit-modal {
     width: 80;
     height: auto;
     background: $panel;
     border: thick $primary;
     padding: 1;
-    align: center middle;
 }
 
 .modal-title {

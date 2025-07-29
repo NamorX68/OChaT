@@ -1,5 +1,12 @@
-/* Provider Selector Modal Styles */
-.provider-selector-modal {
+/* Generic Selector Modal Styles - Used by all selector modals */
+
+/* Center all selector modals */
+ModelSelectorModal, ProviderSelectorModal, WorkspaceSelectorModal {
+    align: center middle;
+    layer: notification;
+}
+
+.selector-modal {
     width: 60;
     height: 25;
     background: $panel;
@@ -14,14 +21,14 @@
     margin-bottom: 1;
 }
 
-.provider-list {
+.selector-list {
     height: 12;
     border: solid $border;
     background: $surface;
     margin-bottom: 1;
 }
 
-.provider-list:focus {
+.selector-list:focus {
     border: solid $accent;
 }
 

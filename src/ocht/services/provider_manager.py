@@ -14,8 +14,8 @@ T = TypeVar('T')
 
 def _with_session(func: Callable) -> T:
     """Helper function to execute database operations with session."""
-    db = next(get_session())
-    return func(db)
+    with get_session() as db:
+        return func(db)
 
 
 def _validate_provider_name(name: str) -> str:
@@ -125,7 +125,7 @@ def update_provider_with_validation(provider_id: int, name: Optional[str] = None
         validated_name = name
         if name:  # Only validate if name is provided (not None)
             validated_name = _validate_provider_name(name)
-            if validated_name.lower() != existing_provider.name.lower():
+            if validated_name.lower() != existing_provider.prov_name.lower():
                 _check_provider_name_uniqueness(db, validated_name, provider_id)
 
         return update_llm_provider_config(

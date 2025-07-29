@@ -24,6 +24,7 @@ src/ocht/repositories/prompt_template.py
 src/ocht/repositories/setting.py
 src/ocht/repositories/workspace.py
 src/ocht/services/__init__.py
+src/ocht/services/adapter_manager.py
 src/ocht/services/chat.py
 src/ocht/services/config.py
 src/ocht/services/model_manager.py
@@ -41,3 +42,4 @@ src/ocht/tui/screens/settings_manager.py
 src/ocht/tui/screens/workspace_manager.py
 src/ocht/tui/screens/workspace_selector.py
 src/ocht/tui/widgets/chat_bubble.py
+src/ocht/tui/widgets/confirmation_dialog.py

@@ -1,0 +1,80 @@
+/* Confirmation Dialog Styles */
+
+ConfirmationDialog {
+    align: center middle;
+    layer: notification;
+}
+
+.confirmation-dialog {
+    width: 70;
+    height: auto;
+    min-height: 12;
+    max-width: 90;
+    max-height: 25;
+    background: $surface;
+    border: thick $primary;
+    padding: 2;
+    margin: 1;
+    content-align: center top;
+    overflow: auto;
+}
+
+MessageDialog {
+    align: center middle;
+    layer: notification;
+}
+
+.message-dialog {
+    width: 60;
+    height: auto;
+    max-width: 80;
+    max-height: 20;
+    background: $surface;
+    border: thick $primary;
+    padding: 1 2;
+    margin: 1;
+}
+
+.dialog-title {
+    dock: top;
+    height: auto;
+    min-height: 1;
+    text-align: center;
+    text-style: bold;
+    color: $text;
+    background: transparent;
+    margin: 0 0 1 0;
+}
+
+.dialog-message {
+    dock: top;
+    height: auto;
+    min-height: 3;
+    text-align: center;
+    color: $text;
+    background: transparent;
+    margin: 0 0 1 0;
+    content-align: center middle;
+}
+
+.button-row {
+    dock: bottom;
+    height: 3;
+    align: center middle;
+}
+
+.button-row-center {
+    dock: bottom;
+    height: 3;
+    align: center middle;
+}
+
+.button-row Button {
+    margin: 0 1;
+    min-width: 10;
+}
+
+.button-row-center Button {
+    margin: 0 1;
+    min-width: 10;
+}

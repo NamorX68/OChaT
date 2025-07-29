@@ -1,5 +1,10 @@
 /* Settings Edit Modal Styles */
 
+SettingEditScreen {
+    align: center middle;
+    layer: notification;
+}
+
 .setting-edit-modal {
     width: 60%;
     height: auto;

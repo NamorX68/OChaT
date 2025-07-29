@@ -10,7 +10,7 @@ from ocht.services.workspace_manager import get_available_workspaces
 class WorkspaceSelectorModal(ModalScreen):
     """Modal dialog for selecting workspaces."""
 
-    CSS_PATH = "../styles/workspace_selector.tcss"
+    CSS_PATH = "../styles/selector_modal.tcss"
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
@@ -26,13 +26,13 @@ class WorkspaceSelectorModal(ModalScreen):
         """Compose the workspace selector modal."""
         yield Vertical(
             Static("📁 Select a Workspace", classes="modal-title"),
-            ListView(id="workspace-list", classes="workspace-list"),
+            ListView(id="workspace-list", classes="selector-list"),
             Horizontal(
                 Button("OK", variant="primary", id="ok-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
                 classes="button-row"
             ),
-            classes="workspace-selector-modal"
+            classes="selector-modal"
         )
 
     def on_mount(self):
