@@ -1,4 +1,6 @@
 .venv/
+.zed/
+.junie/
+.idea/
 __pycache__/
 .DS_Store
-chat_seed.md

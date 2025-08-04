@@ -22,35 +22,37 @@ Dynamic: license-file
 
 [![PyPI version](https://img.shields.io/pypi/v/ocht.svg)](https://pypi.org/project/ocht/) [![Build Status](https://github.com/dein-username/OChaT/actions/workflows/ci.yml/badge.svg)](https://github.com/dein-username/OChaT/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**OChaT** ist eine modulare Python-TUI-Applikation, die lokal (Ollama) und online (ChatGPT, Claude, Grok) verfügbare Large Language Models über LangChain orchestriert.
+**OChaT** is a modular Python TUI application that orchestrates Large Language Models (LLMs) via LangChain. It supports both local models (Ollama) and cloud providers (ChatGPT, Claude, Grok).
 
 ---
 
 ## 📦 Installation
 
-1. **Repository klonen**
+1. **Clone the repository**
 
    ```bash
    git clone https://github.com/dein-username/OChaT.git
    cd OChaT
    ```
-2. **Virtuelle Umgebung erstellen & aktivieren**
+
+2. **Install dependencies**
 
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
-3. **Projekt initialisieren & Abhängigkeiten installieren**
-
-   ```bash
-   uv init
    uv sync
    ```
 
-> **Hinweis:** Standardmäßig installiert `uv sync` bereits alle Abhängigkeiten aus `pyproject.toml`, einschließlich:
+3. **Install package in development mode**
+
+   ```bash
+   uv install -e .
+   ```
+
+> **Note:** By default, `uv sync` installs all dependencies from `pyproject.toml`, including:
 >
 > * `alembic>=1.15.2`
-> * `langchain>=0.3.25`
+> * `click>=8.1.8`
+> * `langchain>=0.3.26`
+> * `langchain-ollama>=0.3.3`
 > * `ollama>=0.4.8`
 > * `rich>=14.0.0`
 > * `sqlmodel>=0.0.24`
@@ -58,33 +60,91 @@ Dynamic: license-file
 
 ---
 
-## ⚡ Schnelleinstieg
+## ⚡ Quick Start
 
-* **`ocht init [PFAD]`**
-  Erstellt einen neuen Chat-Workspace mit Konfigurationsdatei und Historie.
-* **`ocht chat`**
-  Startet eine interaktive Chat-Session basierend auf dem aktuellen Workspace.
-* **`ocht config`**
-  Öffnet die `ocht.yaml` im Standard-Editor (API-Keys, Modell-Einstellungen).
-* **`ocht list-models`**
-  Listet verfügbare LLM-Modelle über LangChain auf.
-
-<details>
-<summary>Beispiel</summary>
+Launch the TUI application:
 
 ```bash
-# Neuen Chat-Workspace "mein-chat" anlegen
-ocht init mein-chat
-cd mein-chat
-# Chat starten
-ocht chat
+uv run ocht
+```
+
+Or use specific commands:
+
+* **`uv run ocht init <workspace>`** - Create new workspace
+* **`uv run ocht chat`** - Start interactive chat
+* **`uv run ocht list-models`** - List available models
+* **`uv run ocht sync-models`** - Sync model metadata
+* **`uv run ocht config`** - Open configuration editor
+* **`uv run ocht migrate <version>`** - Run database migrations
+
+### Available CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `init <name>` | Creates a new chat workspace with configuration file and history |
+| `chat` | Starts interactive chat session based on current workspace |
+| `config` | Opens configuration in default editor |
+| `export-config <file>` | Exports current settings as YAML or JSON file |
+| `import-config <file>` | Imports settings from YAML or JSON file |
+| `list-models` | Lists available LLM models via LangChain |
+| `sync-models` | Synchronizes model metadata from external providers |
+| `migrate <version>` | Runs Alembic migrations to specified target version |
+| `version` | Shows current CLI/package version |
+| `help [command]` | Shows detailed help for a command |
+
+<details>
+<summary>Example Usage</summary>
+
+```bash
+# Create new chat workspace
+uv run ocht init my-workspace
+
+# Start chat session
+uv run ocht chat
+
+# List available models
+uv run ocht list-models
+
+# Sync model metadata
+uv run ocht sync-models
 ```
 
 </details>
 
 ---
 
-## 🗂️ Projektstruktur
+## 🏗️ Architecture
+
+### Core Components
+
+**Database Layer (`core/`)**
+- `models.py` - SQLModel entities: Workspace, Message, LLMProviderConfig, Model, Setting, PromptTemplate
+- `db.py` - Database engine, session management, and initialization
+- `migration.py` - Alembic integration for schema migrations
+
+**Repository Layer (`repositories/`)**
+- CRUD operations for each entity
+- Direct database access abstraction
+- Files: `workspace.py`, `message.py`, `llm_provider_config.py`, `model.py`, `setting.py`, `prompt_template.py`
+
+**Service Layer (`services/`)**
+- Business logic and use cases
+- Orchestrates repositories and external APIs
+- Files: `workspace.py`, `chat.py`, `config.py`, `model_manager.py`, `provider_manager.py`, `prompt_manager.py`
+
+**Adapter Layer (`adapters/`)**
+- LangChain integration
+- `base.py` - Abstract LLMAdapter interface
+- `ollama.py` - Ollama-specific implementation
+
+**TUI Layer (`tui/`)**
+- Textual-based user interface
+- `app.py` - Main TUI application
+- `screens/` - UI screens for model/provider management
+- `widgets/` - Custom UI components (chat bubbles, etc.)
+- `styles/` - TCSS styling files
+
+## 🗂️ Project Structure
 
 ```text
 OChaT/
@@ -92,64 +152,84 @@ OChaT/
 ├── LICENSE
 ├── pyproject.toml
 ├── README.md
+├── CLAUDE.md              # Claude Code project instructions
+├── alembic.ini            # Alembic configuration
+├── migrations/            # Database migration files
 ├── docs/
+├── tests/                 # Test files
 ├── src/
 │   └── ocht/
 │       ├── __init__.py
-│       ├── cli.py             # CLI-Entrypoint (Click-Commands)
-│       ├── core/              # Engine, Sessions & Models
-│       │   ├── db.py          # Engine & Session-Factory
-│       │   ├── migration.py   # Alembic-Integration
-│       │   └── models.py      # SQLModel-Entitäten
-│       ├── repositories/      # CRUD-Logik pro Entität
-│       │   └── … (alle module)
-│       ├── services/          # Geschäftslogik / Use Cases
-│       │   └── … (alle module)
-│       ├── adapters/          # LangChain-Adapter
-│       └── tui/               # Textbasierte UI-Komponenten
+│       ├── cli.py             # CLI entry point (Click commands)
+│       ├── core/              # Database engine, sessions & models
+│       │   ├── db.py          # Engine & session factory
+│       │   ├── migration.py   # Alembic integration
+│       │   ├── models.py      # SQLModel entities
+│       │   └── version.py     # Version management
+│       ├── repositories/      # CRUD logic per entity
+│       │   ├── workspace.py
+│       │   ├── message.py
+│       │   ├── llm_provider_config.py
+│       │   ├── model.py
+│       │   ├── setting.py
+│       │   └── prompt_template.py
+│       ├── services/          # Business logic / use cases
+│       │   ├── workspace.py
+│       │   ├── chat.py
+│       │   ├── config.py
+│       │   ├── model_manager.py
+│       │   ├── provider_manager.py
+│       │   ├── prompt_manager.py
+│       │   ├── settings_manager.py
+│       │   └── adapter_manager.py
+│       ├── adapters/          # LangChain adapters
+│       │   ├── base.py        # Abstract adapter interface
+│       │   └── ollama.py      # Ollama implementation
+│       ├── tui/               # Text-based UI components
+│       │   ├── app.py         # Main TUI application
+│       │   ├── screens/       # UI screens
+│       │   ├── widgets/       # Custom widgets
+│       │   └── styles/        # TCSS styling
+│       └── data/              # SQLite database
 └── uv.lock
-extbasierte UI-Komponenten (Rich)
 ```
 
 ---
 
-## 🤝 Mitwirken
+## 🧪 Testing
 
-Beiträge sind willkommen!:
-
-1. **Fork** das Repository.
-2. **Feature-Branch** erstellen:
-   Erstelle einen neuen Branch in deinem Fork, in dem du dein Feature entwickelst. Beispiel:
+Run tests using pytest:
 
 ```bash
-git checkout -b feature/mein-feature
+uv run pytest
 ```
-
-3. **Änderungen committen**:
-   Committe deine Änderungen mit einer aussagekräftigen Nachricht, die kurz beschreibt, was du geändert hast. Beispiel:
-
-````bash
-if [[ -n "$(git diff --cached)" ]]; then
-  git commit -m "feat: Beschreibung meines Features"
-fi
-```bash
-git commit -m "feat: Beschreibung meines Features"
-````
-
-4. **Push** zum Fork:
-   Pushe deinen Feature-Branch zu deinem Remote-Fork auf GitHub. Beispiel:
-
-```bash
-git push origin feature/mein-feature
-```
-
-5. **Pull Request** öffnen.
-
-Bitte halte dich an unsere Coding Guidelines und füge Tests hinzu.
 
 ---
 
-## 📄 Lizenz
+## 🤝 Contributing
 
-Dieses Projekt steht unter der [MIT License](LICENSE).
+Contributions are welcome!
+
+1. **Fork** the repository
+2. **Create feature branch**: 
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+3. **Commit changes**:
+   ```bash
+   git commit -m "feat: description of my feature"
+   ```
+4. **Push to fork**:
+   ```bash
+   git push origin feature/my-feature
+   ```
+5. **Open Pull Request**
+
+Please follow our coding guidelines and add tests for new features.
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
 

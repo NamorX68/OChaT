@@ -37,6 +37,7 @@ ocht = "ocht.cli:cli"
 dev = [
     "ocht",
     "pytest>=8.3.5",
+    "pytest-asyncio>=0.21.0",
 ]
 
 # 5) UV‐Flag, damit es das Paket wirklich baut

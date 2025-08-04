@@ -10,6 +10,7 @@ src/ocht.egg-info/entry_points.txt
 src/ocht.egg-info/requires.txt
 src/ocht.egg-info/top_level.txt
 src/ocht/adapters/base.py
+src/ocht/adapters/memory.py
 src/ocht/adapters/ollama.py
 src/ocht/core/__init__.py
 src/ocht/core/db.py
