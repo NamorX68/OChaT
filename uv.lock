@@ -640,7 +640,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "ocht" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -659,7 +658,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "ocht", editable = "." },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=0.21.0" },
 ]

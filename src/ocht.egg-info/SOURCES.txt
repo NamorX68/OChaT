@@ -44,3 +44,4 @@ src/ocht/tui/screens/workspace_manager.py
 src/ocht/tui/screens/workspace_selector.py
 src/ocht/tui/widgets/chat_bubble.py
 src/ocht/tui/widgets/confirmation_dialog.py
+src/ocht/tui/widgets/custom_footer.py

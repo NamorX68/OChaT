@@ -37,6 +37,7 @@ Footer {
     color: $text-muted;
 }
 
+
 .message-row {
     height: auto;
     width: 100%;

@@ -169,23 +169,13 @@ class AdapterManager:
         return self._current_adapter is not None
     
     def get_adapter_info(self) -> Dict[str, Any]:
-        """Get information about the current adapter including provider name."""
-        def _get_info(db):
-            provider_name = None
-            if self._current_provider_id:
-                provider_config = get_llm_provider_config_by_id(db, self._current_provider_id)
-                if provider_config:
-                    provider_name = provider_config.prov_name
-            
-            return {
-                "provider_id": self._current_provider_id,
-                "provider_name": provider_name,
-                "model_name": self._current_model_name,
-                "adapter_type": type(self._current_adapter).__name__ if self._current_adapter else None,
-                "is_active": self._current_adapter is not None
-            }
-        
-        return _with_session(_get_info)
+        """Get information about the current adapter."""
+        return {
+            "provider_id": self._current_provider_id,
+            "model_name": self._current_model_name,
+            "adapter_type": type(self._current_adapter).__name__ if self._current_adapter else None,
+            "is_active": self._current_adapter is not None
+        }
 
 
 # Global instance
