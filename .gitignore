@@ -2,5 +2,6 @@
 .zed/
 .junie/
 .idea/
+.zed/
 __pycache__/
 .DS_Store

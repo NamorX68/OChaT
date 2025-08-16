@@ -150,9 +150,15 @@ rm test_integration.py  # Clean up after testing
 
 ## Build and Deployment
 
+### Package Manager
+The project uses **uv** as the primary package manager and build tool. Only use pip as a fallback when uv is not available or doesn't work.
+
 ### Development Setup
 ```bash
-# Install dependencies
+# Install dependencies (preferred - using uv)
+uv sync
+
+# Alternative: Install dependencies (fallback - using pip)
 pip install -e .
 
 # Initialize database
@@ -164,17 +170,32 @@ python -c "from ocht.core.migration import migrate_to; migrate_to('head')"
 
 ### Build Process
 ```bash
-# Build package
+# Build package (preferred - using uv)
+uv build
+
+# Alternative: Build package (fallback - using pip/build)
 python -m build
 
-# Install locally
+# Install locally (preferred - using uv)
+uv pip install -e .
+
+# Alternative: Install locally (fallback - using pip)
 pip install -e .
+```
+
+### Development Dependencies
+```bash
+# Install development dependencies (preferred - using uv)
+uv sync --group dev
+
+# Alternative: Install development dependencies (fallback - using pip)
+pip install -e ".[dev]"
 ```
 
 ### No Build Required for Testing
 - The project doesn't require building before testing
 - Tests can be run directly on source code
-- Use `pip install -e .` for development installation
+- Use `uv sync` for development installation (preferred) or `pip install -e .` as fallback
 
 ## Junie-Specific Instructions
 

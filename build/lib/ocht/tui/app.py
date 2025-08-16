@@ -4,6 +4,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Input
 from textual.containers import VerticalScroll, Horizontal
 from ocht.tui.widgets.chat_bubble import ChatBubble
+from ocht.tui.widgets.custom_footer import CustomFooter
 from ocht.tui.screens.provider_manager import ProviderManagerScreen
 from ocht.tui.screens.provider_selector import ProviderSelectorModal
 from ocht.tui.screens.model_selector import ModelSelectorModal
@@ -53,7 +54,7 @@ class ChatApp(App):
         yield Input(
             placeholder="💬 Write your message... (ESC to focus)", id="chat-input"
         )
-        yield Footer()
+        yield CustomFooter()
 
     async def on_mount(self) -> None:
         """App start: Focus input and initialize adapter."""
@@ -62,6 +63,7 @@ class ChatApp(App):
         # Try to load settings on startup
         if adapter_manager.load_settings_on_startup():
             self.adapter = adapter_manager.get_current_adapter()
+            self._update_footer_adapter_info()
             self._add_message(
                 "👋 Hello! I am your AI Assistant. Type `/help` for help.", "bot"
             )
@@ -74,6 +76,9 @@ class ChatApp(App):
                 await self._show_initial_provider_selection()
             elif adapter_manager.requires_model_selection():
                 await self._show_initial_model_selection()
+                
+            # Update footer even if no adapter is configured yet
+            self._update_footer_adapter_info()
 
     async def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle input submission with mouse escape sequence filtering.
@@ -225,8 +230,8 @@ class ChatApp(App):
         # Add user message and scroll immediately
         self._add_message(prompt, "user")
 
-        # Create streaming bot message bubble
-        bot_bubble = self._add_message("", "bot", streaming=True)
+        # Create streaming bot message bubble with thinking indicator
+        bot_bubble = self._add_message("🤔 Thinking...", "bot", streaming=True)
         full_response = ""
 
         try:
@@ -298,11 +303,9 @@ class ChatApp(App):
         extra_classes = f" {style}" if style else ""
         bubble = ChatBubble(message, sender + extra_classes, streaming=streaming)
 
-        # Create container for the message row with the bubble inside
-        message_row = Horizontal(bubble, classes=f"message-row {sender}")
-
-        # Add message row to chat container
-        container.mount(message_row)
+        # Add bubble directly to chat container with sender-specific styling
+        bubble.add_class(f"bubble-{sender}")
+        container.mount(bubble)
 
         # Immediate scrolling without animation
         container.scroll_end(animate=False)
@@ -326,6 +329,20 @@ class ChatApp(App):
             message (str): The notification message to display.
         """
         self._add_message(message, "bot", "success")
+
+    def _update_footer_adapter_info(self) -> None:
+        """Update the footer with current adapter information."""
+        try:
+            footer = self.query_one(CustomFooter)
+            adapter_info = adapter_manager.get_adapter_info()
+            
+            provider_name = adapter_info.get("provider_name", "")
+            model_name = adapter_info.get("model_name", "")
+            
+            footer.update_adapter_info(provider_name, model_name)
+        except Exception:
+            # Footer might not exist yet or adapter info not available
+            pass
 
     async def _show_initial_provider_selection(self) -> None:
         """Show provider selection during initial setup."""
@@ -364,6 +381,7 @@ class ChatApp(App):
                     result.model_name,
                 ):
                     self.adapter = adapter_manager.get_current_adapter()
+                    self._update_footer_adapter_info()
                     self._add_message(
                         "🎉 Setup complete! You can now start chatting.",
                         "bot",
@@ -410,6 +428,7 @@ class ChatApp(App):
                             adapter_manager.get_current_model_name() or "",
                         ):
                             self.adapter = adapter_manager.get_current_adapter()
+                            self._update_footer_adapter_info()
                             self.add_note(f"✅ Provider gewechselt: {result.prov_name}")
                         else:
                             self.add_note("❌ Fehler beim Wechseln des Providers")
@@ -442,6 +461,7 @@ class ChatApp(App):
                         result.prov_id, adapter_manager.get_current_model_name() or ""
                     ):
                         self.adapter = adapter_manager.get_current_adapter()
+                        self._update_footer_adapter_info()
                         self.add_note(f"✅ Provider ausgewählt: {result.prov_name}")
                     else:
                         self.add_note("❌ Fehler beim Auswählen des Providers")
@@ -480,6 +500,7 @@ class ChatApp(App):
                     provider_id, selected_model.model_name
                 ):
                     self.adapter = adapter_manager.get_current_adapter()
+                    self._update_footer_adapter_info()
                     self.add_note(f"✅ Modell gewechselt: {selected_model.model_name}")
                 else:
                     self.add_note("❌ Fehler beim Wechseln des Modells")
@@ -507,6 +528,7 @@ class ChatApp(App):
                     provider_id, selected_model.model_name
                 ):
                     self.adapter = adapter_manager.get_current_adapter()
+                    self._update_footer_adapter_info()
                     self.add_note(f"✅ Modell gewechselt: {selected_model.model_name}")
                 else:
                     self.add_note("❌ Fehler beim Wechseln des Modells")

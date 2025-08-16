@@ -13,6 +13,7 @@ Requires-Dist: click>=8.1.8
 Requires-Dist: langchain>=0.3.26
 Requires-Dist: langchain-ollama>=0.3.3
 Requires-Dist: ollama>=0.4.8
+Requires-Dist: pyperclip>=1.8.2
 Requires-Dist: rich>=14.0.0
 Requires-Dist: sqlmodel>=0.0.24
 Requires-Dist: textual>=3.2.0

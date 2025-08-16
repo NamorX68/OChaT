@@ -303,11 +303,9 @@ class ChatApp(App):
         extra_classes = f" {style}" if style else ""
         bubble = ChatBubble(message, sender + extra_classes, streaming=streaming)
 
-        # Create container for the message row with the bubble inside
-        message_row = Horizontal(bubble, classes=f"message-row {sender}")
-
-        # Add message row to chat container
-        container.mount(message_row)
+        # Add bubble directly to chat container with sender-specific styling
+        bubble.add_class(f"bubble-{sender}")
+        container.mount(bubble)
 
         # Immediate scrolling without animation
         container.scroll_end(animate=False)

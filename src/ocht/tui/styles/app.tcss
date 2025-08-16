@@ -15,6 +15,8 @@ Header {
     background: $panel;
     border: solid $border;
     margin: 1;
+    padding: 1;
+    overflow: auto;
     scrollbar-background: $surface;
     scrollbar-color: $primary;
 }
@@ -38,42 +40,63 @@ Footer {
 }
 
 
-.message-row {
-    height: auto;
-    width: 100%;
-    margin: 0 1; /* Verringerte Margin zwischen den Bubbles */
-    padding: 0 1; /* Verringertes Padding für kleinere Lücken innerhalb der Zeilen */
-}
-
-.message-row.user {
-    align: right middle;
-}
-
-.message-row.bot {
-    align: left middle;
-}
-
 .bubble {
-    padding: 1 2;
-    margin: 0 1; /* Verringerte Margin zwischen den Bubbles */
-    max-width: 70%;
+    margin: 0 0 1 0;
+    max-width: 98%;
+    height: auto;
+    width: auto;
     min-height: 3;
+    min-width: 150;
 }
 
-.user.bubble {
+.bubble-user {
+    align: right top;
+    margin-left: 30;
+}
+
+.bubble-bot {
+    align: left top;
+    margin-right: 25;
+}
+
+
+.bubble-content {
+    width: 100%;
+    height: auto;
+    background: transparent;
+    border: none;
+    color: $text;
+    padding: 1 2;
+}
+
+.user-bubble-content {
     background: $primary;
     color: $text;
     border: solid $primary;
+    padding: 1 2;
+    margin: 0 0 1 0;
 }
 
-.bot.bubble {
+.bot-bubble-content {
     background: $surface-lighten-1;
     color: $text;
     border: solid $border;
+    padding: 1 2;
+    margin: 0 0 1 0;
 }
 
-.bubble:hover {
-    opacity: 90%;
+.code {
+    background: $surface-darken-1;
+    color: $accent;
+    padding: 0 1;
+}
+
+.pre-block {
+    background: $surface-darken-1;
+    border: solid $border;
+    padding: 1;
+    margin: 1 0;
+    overflow-x: auto;
 }
 
 .typing {
