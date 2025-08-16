@@ -30,6 +30,8 @@ class ChatApp(App):
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+l", "clear_chat", "Clear chat"),
         ("escape", "focus_input", "Focus input"),
+        ("ctrl+shift+c", "copy_last_bot_message", "Copy last bot message"),
+        ("ctrl+shift+u", "copy_last_user_message", "Copy last user message"),
     ]
 
     def __init__(self, *args, **kwargs) -> None:
@@ -202,7 +204,9 @@ class ChatApp(App):
 ## Keyboard shortcuts:
 - `Ctrl+C` - Exit program
 - `Ctrl+L` - Clear chat
-- `ESC` - Focus input field"""
+- `ESC` - Focus input field
+- `Ctrl+Shift+C` - Copy last bot message
+- `Ctrl+Shift+U` - Copy last user message"""
                 self._add_message(help_text, "bot")
 
             case _:
@@ -534,3 +538,33 @@ class ChatApp(App):
                     self.add_note("❌ Fehler beim Wechseln des Modells")
 
         await self.push_screen(ModelSelectorModal(), handle_model_selection)
+
+    def action_copy_last_bot_message(self) -> None:
+        """Copy the last bot message to clipboard."""
+        try:
+            container = self.query_one("#chat-container", VerticalScroll)
+            # Find the last bot bubble
+            bot_bubbles = container.query(".bubble-bot")
+            self.notify(f"Debug: Found {len(bot_bubbles)} bot bubbles", severity="information")
+            
+            if bot_bubbles:
+                last_bot_bubble = bot_bubbles[-1]
+                self.notify(f"Debug: Trying to copy from bubble: {type(last_bot_bubble)}", severity="information")
+                # Use the existing copy functionality
+                last_bot_bubble.action_copy_content()
+            else:
+                self.notify("No bot messages to copy", severity="warning")
+        except Exception as e:
+            self.notify(f"Debug: Copy error: {e}", severity="error")
+
+    def action_copy_last_user_message(self) -> None:
+        """Copy the last user message to clipboard."""
+        container = self.query_one("#chat-container", VerticalScroll)
+        # Find the last user bubble
+        user_bubbles = container.query(".bubble-user")
+        if user_bubbles:
+            last_user_bubble = user_bubbles[-1]
+            # Use the existing copy functionality
+            last_user_bubble.action_copy_content()
+        else:
+            self.notify("No user messages to copy", severity="warning")

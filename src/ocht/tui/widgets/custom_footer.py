@@ -70,6 +70,10 @@ class CustomFooter(Static):
                             bindings.append("^L Clear")
                         elif key == "escape":
                             bindings.append("ESC Focus")
+                        elif key == "ctrl+shift+c":
+                            bindings.append("^⇧C Copy Bot")
+                        elif key == "ctrl+shift+u":
+                            bindings.append("^⇧U Copy User")
                 binding_text = "  ".join(bindings)
             
             if not binding_text:
