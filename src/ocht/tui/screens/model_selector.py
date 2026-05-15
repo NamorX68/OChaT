@@ -18,15 +18,19 @@ class ModelSelectorModal(ModalScreen):
         Binding("enter", "select", "Select"),
     ]
 
-    def __init__(self, **kwargs):
+    def __init__(self, provider_id: Optional[int] = None, **kwargs):
         super().__init__(**kwargs)
         self.models: List[Model] = []
         self.selected_model: Optional[Model] = None
+        self.provider_id = provider_id  # If set, only show models for this provider
 
     def compose(self):
         """Compose the model selector modal."""
+        title = "🔧 Select a model"
+        if self.provider_id is not None:
+            title += f" (Provider filtered)"
         yield Vertical(
-            Static("🔧 Select a model", classes="modal-title"),
+            Static(title, classes="modal-title"),
             ListView(id="model-list", classes="selector-list"),
             Horizontal(
                 Button("OK", variant="primary", id="ok-btn"),
@@ -49,7 +53,13 @@ class ModelSelectorModal(ModalScreen):
         """Load models from database and populate the list."""
         try:
             # Get models using service function
-            self.models = list_llm_models()
+            all_models = list_llm_models()
+            
+            # Filter by provider if specified
+            if self.provider_id is not None:
+                self.models = [model for model in all_models if model.model_provider_id == self.provider_id]
+            else:
+                self.models = all_models
 
             model_list = self.query_one("#model-list", ListView)
             model_list.clear()

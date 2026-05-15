@@ -90,6 +90,7 @@ class ProviderSelectorModal(ModalScreen):
                 # Trigger the select action when Enter is pressed on ListView
                 self.action_select()
                 event.prevent_default()
+                event.stop()  # Stop event propagation completely
                 return
         # Let other keys be handled normally by the default behavior
 

@@ -12,6 +12,7 @@ src/ocht.egg-info/top_level.txt
 src/ocht/adapters/base.py
 src/ocht/adapters/memory.py
 src/ocht/adapters/ollama.py
+src/ocht/adapters/openai_compatible.py
 src/ocht/core/__init__.py
 src/ocht/core/db.py
 src/ocht/core/migration.py

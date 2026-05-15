@@ -2,6 +2,7 @@ from typing import Optional, Dict, Any, TypeVar, Callable
 from ocht.core.db import get_session
 from ocht.adapters.base import LLMAdapter
 from ocht.adapters.ollama import OllamaAdapter
+from ocht.adapters.openai_compatible import OpenAICompatibleAdapter
 from ocht.repositories.setting import get_setting_by_key, create_setting, update_setting
 from ocht.repositories.llm_provider_config import get_llm_provider_config_by_id
 from ocht.repositories.model import get_model_by_name
@@ -121,22 +122,53 @@ class AdapterManager:
             
             # Get model configuration
             model = get_model_by_name(db, model_name)
+            actual_model_name = model_name  # Keep track of the actual model name to use
+            
+            # If model doesn't exist or doesn't belong to this provider, find first available model for provider
             if not model or model.model_provider_id != provider_id:
-                return False
+                from ocht.repositories.model import get_models_by_provider
+                provider_models = get_models_by_provider(db, provider_id)
+                
+                # Find first available model for this provider
+                model = None
+                for candidate_model in provider_models:
+                    if candidate_model.is_available:
+                        model = candidate_model
+                        actual_model_name = candidate_model.model_name  # Update to use this model
+                        break
+                
+                # If no available models, use first model anyway
+                if not model and provider_models:
+                    model = provider_models[0]
+                    actual_model_name = provider_models[0].model_name
+                
+                # If still no model found, return False
+                if not model:
+                    return False
             
             # Create adapter based on provider type
             try:
-                if provider_config.prov_name.lower() == "ollama":
+                provider_name = provider_config.prov_name.lower()
+                
+                if provider_name == "ollama":
                     self._current_adapter = OllamaAdapter(
-                        model=model_name,
+                        model=actual_model_name,
                         default_params={"temperature": 0.5}
                     )
+                elif provider_name in ["openai", "lm studio"]:
+                    # Use OpenAI-compatible adapter for both OpenAI and LM Studio
+                    self._current_adapter = OpenAICompatibleAdapter(
+                        model=actual_model_name,
+                        api_key=provider_config.prov_api_key,
+                        base_url=provider_config.prov_endpoint,
+                        default_params={"temperature": 0.7}
+                    )
                 else:
-                    # TODO: Add support for other providers (OpenAI, Claude, etc.)
+                    # Unsupported provider
                     return False
                 
                 self._current_provider_id = provider_id
-                self._current_model_name = model_name
+                self._current_model_name = actual_model_name  # Use the actual model name
                 return True
                 
             except Exception:

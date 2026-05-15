@@ -55,9 +55,10 @@ def list_models():
 
 
 @cli.command()
-def sync_models():
+@click.option('--delete-missing', is_flag=True, help='Delete models from database that are no longer available in providers')
+def sync_models(delete_missing):
     """Synchronizes model metadata from external providers into the database."""
-    sync_llm_models()
+    sync_llm_models(delete_missing=delete_missing)
 
 
 @cli.command()

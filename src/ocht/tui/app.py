@@ -427,10 +427,9 @@ class ChatApp(App):
                             asyncio.create_task(self.action_clear_chat())
 
                         # Update adapter manager and app adapter
-                        if adapter_manager.switch_adapter(
-                            result.prov_id,
-                            adapter_manager.get_current_model_name() or "",
-                        ):
+                        # Use default model from provider or first available model
+                        default_model = result.prov_default_model or self._get_first_available_model_for_provider(result.prov_id)
+                        if default_model and adapter_manager.switch_adapter(result.prov_id, default_model):
                             self.adapter = adapter_manager.get_current_adapter()
                             self._update_footer_adapter_info()
                             self.add_note(f"✅ Provider gewechselt: {result.prov_name}")
@@ -451,19 +450,16 @@ class ChatApp(App):
                         )
                     else:
                         # No active chat, switch directly
-                        if adapter_manager.switch_adapter(
-                            result.prov_id,
-                            adapter_manager.get_current_model_name() or "",
-                        ):
+                        default_model = result.prov_default_model or self._get_first_available_model_for_provider(result.prov_id)
+                        if default_model and adapter_manager.switch_adapter(result.prov_id, default_model):
                             self.adapter = adapter_manager.get_current_adapter()
                             self.add_note(f"✅ Provider gewechselt: {result.prov_name}")
                         else:
                             self.add_note("❌ Fehler beim Wechseln des Providers")
                 else:
                     # Same provider or no current provider, no confirmation needed
-                    if adapter_manager.switch_adapter(
-                        result.prov_id, adapter_manager.get_current_model_name() or ""
-                    ):
+                    default_model = result.prov_default_model or self._get_first_available_model_for_provider(result.prov_id)
+                    if default_model and adapter_manager.switch_adapter(result.prov_id, default_model):
                         self.adapter = adapter_manager.get_current_adapter()
                         self._update_footer_adapter_info()
                         self.add_note(f"✅ Provider ausgewählt: {result.prov_name}")
@@ -537,7 +533,9 @@ class ChatApp(App):
                 else:
                     self.add_note("❌ Fehler beim Wechseln des Modells")
 
-        await self.push_screen(ModelSelectorModal(), handle_model_selection)
+        # Get current provider ID to filter models
+        current_provider_id = adapter_manager.get_current_provider_id()
+        await self.push_screen(ModelSelectorModal(provider_id=current_provider_id), handle_model_selection)
 
     def action_copy_last_bot_message(self) -> None:
         """Copy the last bot message to clipboard."""
@@ -545,17 +543,15 @@ class ChatApp(App):
             container = self.query_one("#chat-container", VerticalScroll)
             # Find the last bot bubble
             bot_bubbles = container.query(".bubble-bot")
-            self.notify(f"Debug: Found {len(bot_bubbles)} bot bubbles", severity="information")
             
             if bot_bubbles:
                 last_bot_bubble = bot_bubbles[-1]
-                self.notify(f"Debug: Trying to copy from bubble: {type(last_bot_bubble)}", severity="information")
                 # Use the existing copy functionality
                 last_bot_bubble.action_copy_content()
             else:
                 self.notify("No bot messages to copy", severity="warning")
         except Exception as e:
-            self.notify(f"Debug: Copy error: {e}", severity="error")
+            self.notify(f"Error copying message: {e}", severity="error")
 
     def action_copy_last_user_message(self) -> None:
         """Copy the last user message to clipboard."""
@@ -568,3 +564,22 @@ class ChatApp(App):
             last_user_bubble.action_copy_content()
         else:
             self.notify("No user messages to copy", severity="warning")
+    
+    def _get_first_available_model_for_provider(self, provider_id: int) -> str:
+        """Get the first available model name for a given provider."""
+        from ocht.repositories.model import get_models_by_provider
+        from ocht.core.db import get_session
+        
+        try:
+            with get_session() as db:
+                models = get_models_by_provider(db, provider_id)
+                # Find first available model
+                for model in models:
+                    if model.is_available:
+                        return model.model_name
+                # If no available models, return first model anyway
+                if models:
+                    return models[0].model_name
+                return ""
+        except Exception:
+            return ""

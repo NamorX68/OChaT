@@ -2,6 +2,7 @@ alembic>=1.15.2
 click>=8.1.8
 langchain>=0.3.26
 langchain-ollama>=0.3.3
+langchain-openai>=0.3.30
 ollama>=0.4.8
 pyperclip>=1.8.2
 rich>=14.0.0
