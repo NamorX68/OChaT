@@ -212,7 +212,7 @@ class ProviderManagerScreen(Screen):
     def setup_table(self):
         """Setup the data table columns."""
         table = self.query_one("#provider-table", DataTable)
-        table.add_columns("ID", "Name", "Endpoint", "Default Model", "Created")
+        table.add_columns("ID", "Name", "Endpoint", "Default Model", "Routing Params", "Created")
 
     def load_providers(self):
         """Load providers from database and populate the table."""
@@ -233,10 +233,27 @@ class ProviderManagerScreen(Screen):
                     provider.prov_name,
                     provider.prov_endpoint or "Default",
                     provider.prov_default_model or "None",
+                    self._format_params_preview(provider.prov_params),
                     provider.prov_created_at.strftime("%Y-%m-%d %H:%M")
                 )
         except Exception as e:
             self.notify(f"Error loading providers: {str(e)}", severity="error")
+
+    def _format_params_preview(self, params: str | None, max_length: int = 40) -> str:
+        """Formats prov_params for the overview table, truncating long JSON for readability.
+
+        Args:
+            params: The raw JSON string of provider routing preferences, or None if unset.
+            max_length: Maximum number of characters to show before truncating with an ellipsis.
+
+        Returns:
+            "None" if unset, otherwise the JSON string truncated to `max_length` characters.
+        """
+        if not params:
+            return "None"
+        if len(params) <= max_length:
+            return params
+        return params[:max_length - 1] + "…"
 
     def on_button_pressed(self, event: Button.Pressed):
         """Handle button presses."""
