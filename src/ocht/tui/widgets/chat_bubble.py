@@ -1,8 +1,11 @@
-from textual.widgets import Markdown, Button
-from textual.containers import Container
-from textual.binding import Binding
+"""Chat bubble widget rendering Markdown messages with copy support."""
 import re
+
 import pyperclip
+from textual.binding import Binding
+from textual.containers import Container
+from textual.widgets import Markdown
+
 
 class ChatBubble(Container):
     """Chat message bubble widget with Markdown rendering AND text selection support."""
@@ -13,8 +16,7 @@ class ChatBubble(Container):
     ]
     
     def __init__(self, text: str, sender: str, streaming: bool = False, **kwargs):
-        """
-        Initialize chat bubble.
+        """Initialize chat bubble.
         
         Args:
             text: Initial message content
@@ -51,8 +53,7 @@ class ChatBubble(Container):
         )
     
     def update_content(self, new_content: str) -> None:
-        """
-        Update the content of the bubble (for streaming).
+        """Update the content of the bubble (for streaming).
         
         Args:
             new_content: New complete content to display
@@ -71,14 +72,12 @@ class ChatBubble(Container):
         try:
             markdown_widget = self.query_one("#bubble-markdown", Markdown)
             markdown_widget.update(display_content)
-        except Exception as e:
+        except Exception:
             # Markdown might not be composed yet
             self._initial_text = display_content
     
     def finalize(self) -> None:
-        """
-        Finalize the bubble content (remove typing indicators).
-        """
+        """Finalize the bubble content (remove typing indicators)."""
         if not self.streaming:
             return
             
@@ -93,8 +92,7 @@ class ChatBubble(Container):
             self._initial_text = self._content
     
     def get_content(self) -> str:
-        """
-        Get the current content without indicators.
+        """Get the current content without indicators.
         
         Returns:
             The actual message content
@@ -134,8 +132,8 @@ class ChatBubble(Container):
                 pass
     
     def _markdown_to_plain_text(self, markdown_text: str) -> str:
-        """
-        Konvertiert Markdown zu lesbarem Plain Text.
+        """Konvertiert Markdown zu lesbarem Plain Text.
+
         Behält Code-Blöcke bei für bessere Kopierbarkeit.
         """
         # Bewahre Code-Blöcke

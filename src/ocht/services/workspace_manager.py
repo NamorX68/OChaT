@@ -1,13 +1,16 @@
-from typing import List, Optional, Dict, Any, TypeVar, Callable
+"""Service layer for managing workspaces with business-logic validation."""
+from collections.abc import Callable
+from typing import Any, TypeVar
+
 from ocht.core.db import get_session
-from ocht.repositories.workspace import (
-    get_all_workspaces,
-    create_workspace,
-    update_workspace,
-    delete_workspace,
-    get_workspace_by_id
-)
 from ocht.core.models import Workspace
+from ocht.repositories.workspace import (
+    create_workspace,
+    delete_workspace,
+    get_all_workspaces,
+    get_workspace_by_id,
+    update_workspace,
+)
 
 T = TypeVar('T')
 
@@ -25,7 +28,7 @@ def _validate_workspace_name(name: str) -> str:
     return name.strip()
 
 
-def _check_workspace_name_uniqueness(db, name: str, exclude_id: Optional[int] = None) -> None:
+def _check_workspace_name_uniqueness(db, name: str, exclude_id: int | None = None) -> None:
     """Checks if workspace name is unique."""
     existing_workspaces = get_all_workspaces(db)
     for workspace in existing_workspaces:
@@ -42,18 +45,18 @@ def _ensure_workspace_exists(db, workspace_id: int) -> Workspace:
     return workspace
 
 
-def get_available_workspaces() -> List[Workspace]:
-    """
-    Gets available workspaces for selection.
+def get_available_workspaces() -> list[Workspace]:
+    """Gets available workspaces for selection.
+
     Returns:
         List[Workspace]: List of available workspaces
     """
     return _with_session(get_all_workspaces)
 
 
-def get_workspaces_with_info() -> List[Dict[str, Any]]:
-    """
-    Gets workspaces with additional information for UI display.
+def get_workspaces_with_info() -> list[dict[str, Any]]:
+    """Gets workspaces with additional information for UI display.
+
     Returns:
         List[Dict]: List of dictionaries with workspace information
     """
@@ -73,9 +76,9 @@ def get_workspaces_with_info() -> List[Dict[str, Any]]:
 
 
 def create_workspace_with_validation(name: str, default_model: str,
-                                     description: Optional[str] = None) -> Workspace:
-    """
-    Creates workspace with business logic validation.
+                                     description: str | None = None) -> Workspace:
+    """Creates workspace with business logic validation.
+
     Args:
         name: Workspace name
         default_model: Default model for the workspace
@@ -102,16 +105,17 @@ def create_workspace_with_validation(name: str, default_model: str,
     return _with_session(_create_workspace)
 
 
-def update_workspace_with_validation(workspace_id: int, name: Optional[str] = None,
-                                     default_model: Optional[str] = None,
-                                     description: Optional[str] = None) -> Optional[Workspace]:
-    """
-    Updates workspace with business logic validation.
+def update_workspace_with_validation(workspace_id: int, name: str | None = None,
+                                     default_model: str | None = None,
+                                     description: str | None = None) -> Workspace | None:
+    """Updates workspace with business logic validation.
+
     Args:
         workspace_id: Workspace ID
         name: New workspace name (optional, None means don't change)
         default_model: New default model (optional)
         description: New description (optional)
+
     Returns:
         Optional[Workspace]: The updated workspace or None if not found
     Raises:
@@ -139,8 +143,8 @@ def update_workspace_with_validation(workspace_id: int, name: Optional[str] = No
 
 
 def delete_workspace_with_checks(workspace_id: int) -> bool:
-    """
-    Deletes workspace after business logic checks.
+    """Deletes workspace after business logic checks.
+
     Args:
         workspace_id: ID of the workspace to delete
     Returns:

@@ -1,14 +1,15 @@
-from textual.widgets import Static, DataTable, Button, Input, Label, Header, Footer
-from textual.containers import Vertical, Horizontal
-from textual.screen import Screen, ModalScreen
+"""TUI screens for creating, editing, and managing chat workspaces."""
 from textual.binding import Binding
-from typing import List, Optional
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
+
 from ocht.core.models import Workspace
 from ocht.services.workspace_manager import (
-    get_workspaces_with_info,
     create_workspace_with_validation,
+    delete_workspace_with_checks,
+    get_workspaces_with_info,
     update_workspace_with_validation,
-    delete_workspace_with_checks
 )
 
 
@@ -22,12 +23,19 @@ class WorkspaceEditScreen(ModalScreen):
         Binding("enter", "save", "Save"),
     ]
 
-    def __init__(self, workspace: Optional[Workspace] = None, **kwargs):
+    def __init__(self, workspace: Workspace | None = None, **kwargs):
+        """Initializes the screen in create mode, or edit mode if a workspace is given.
+
+        Args:
+            workspace: Existing workspace to edit, or None to create a new workspace.
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
+        """
         super().__init__(**kwargs)
         self.workspace = workspace
         self.is_edit_mode = workspace is not None
 
     def compose(self):
+        """Build the modal form for creating or editing a workspace."""
         title = "Edit Workspace" if self.is_edit_mode else "Create New Workspace"
         yield Vertical(
             Static(f"📁 {title}", classes="modal-title"),
@@ -67,6 +75,7 @@ class WorkspaceEditScreen(ModalScreen):
         )
 
     def on_button_pressed(self, event: Button.Pressed):
+        """Dispatch save/cancel button presses to their respective actions."""
         if event.button.id == "cancel-btn":
             self.action_cancel()
         elif event.button.id == "save-btn":
@@ -135,14 +144,22 @@ class WorkspaceManagerScreen(Screen):
     ]
 
     def __init__(self, **kwargs):
+        """Initializes the screen with an empty workspace list.
+
+        Args:
+            **kwargs: Additional keyword arguments forwarded to `Screen`.
+        """
         super().__init__(**kwargs)
-        self.workspaces: List[Workspace] = []
+        self.workspaces: list[Workspace] = []
 
     def compose(self):
         """Compose the workspace manager screen."""
         yield Header(show_clock=True)
         yield Vertical(
-            Static("Workspace Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back", classes="help-text"),
+            Static(
+                "Workspace Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back",
+                classes="help-text",
+            ),
             DataTable(id="workspace-table"),
             Horizontal(
                 Button("➕ Add Workspace", variant="primary", id="add-workspace-btn"),

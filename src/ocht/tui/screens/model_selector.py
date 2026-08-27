@@ -1,12 +1,13 @@
-from textual.widgets import Static, ListItem, ListView, Button
-from textual.containers import Vertical, Horizontal
-from textual.screen import ModalScreen
+"""TUI modal for selecting an available LLM model, with on-demand download support."""
 from textual.binding import Binding
-from typing import List, Optional
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Button, ListItem, ListView, Static
+
 from ocht.core.models import Model
-from ocht.services.model_manager import list_llm_models
-from ocht.services.model_manager import restore_model
+from ocht.services.model_manager import list_llm_models, restore_model
 from ocht.tui.widgets.confirmation_dialog import ConfirmationDialog
+
 
 class ModelSelectorModal(ModalScreen):
     """Modal dialog for selecting models."""
@@ -18,17 +19,23 @@ class ModelSelectorModal(ModalScreen):
         Binding("enter", "select", "Select"),
     ]
 
-    def __init__(self, provider_id: Optional[int] = None, **kwargs):
+    def __init__(self, provider_id: int | None = None, **kwargs):
+        """Initializes the modal, optionally restricting the list to a single provider.
+
+        Args:
+            provider_id: If given, only models belonging to this provider are shown.
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
+        """
         super().__init__(**kwargs)
-        self.models: List[Model] = []
-        self.selected_model: Optional[Model] = None
+        self.models: list[Model] = []
+        self.selected_model: Model | None = None
         self.provider_id = provider_id  # If set, only show models for this provider
 
     def compose(self):
         """Compose the model selector modal."""
         title = "🔧 Select a model"
         if self.provider_id is not None:
-            title += f" (Provider filtered)"
+            title += " (Provider filtered)"
         yield Vertical(
             Static(title, classes="modal-title"),
             ListView(id="model-list", classes="selector-list"),
@@ -147,7 +154,11 @@ class ModelSelectorModal(ModalScreen):
         def show_confirmation():
             dialog = ConfirmationDialog(
                 title="Model herunterladen",
-                message=f"Das Model '{model.model_name}' ist nicht verfügbar.\n\nMöchten Sie es jetzt von Ollama herunterladen?\n\nDies kann einige Minuten dauern.",
+                message=(
+                    f"Das Model '{model.model_name}' ist nicht verfügbar.\n\n"
+                    "Möchten Sie es jetzt von Ollama herunterladen?\n\n"
+                    "Dies kann einige Minuten dauern."
+                ),
                 confirm_text="Ja, herunterladen",
                 cancel_text="Abbrechen",
                 confirm_variant="primary"
@@ -180,6 +191,8 @@ class ModelSelectorModal(ModalScreen):
                 self.load_models()
                 self.dismiss(model)
             else:
-                self.notify(f"Fehler beim Herunterladen: {result.get('message', 'Unbekannter Fehler')}", severity="error")
+                self.notify(
+                    f"Fehler beim Herunterladen: {result.get('message', 'Unbekannter Fehler')}", severity="error"
+                )
         except Exception as e:
             self.notify(f"Fehler beim Herunterladen von '{model.model_name}': {str(e)}", severity="error")

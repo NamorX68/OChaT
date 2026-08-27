@@ -1,19 +1,23 @@
-import requests
+"""Service layer for listing, validating, and syncing LLM models from external providers."""
 import subprocess
+from collections.abc import Callable
 from datetime import datetime
-from typing import List, Optional, Dict, Any, TypeVar, Callable
+from typing import Any, TypeVar
+
+import requests
 from sqlmodel import select
+
 from ocht.core.db import get_session
-from ocht.repositories.model import (
-    get_all_models,
-    create_model,
-    get_model_by_name,
-    update_model,
-    delete_model,
-    get_models_by_provider
-)
+from ocht.core.models import LLMProviderConfig, Model
 from ocht.repositories.llm_provider_config import get_all_llm_provider_configs, get_llm_provider_config_by_id
-from ocht.core.models import Model, LLMProviderConfig
+from ocht.repositories.model import (
+    create_model,
+    delete_model,
+    get_all_models,
+    get_model_by_name,
+    get_models_by_provider,
+    update_model,
+)
 
 T = TypeVar('T')
 
@@ -35,7 +39,7 @@ def _validate_model_name(name: str) -> str:
     return name.strip()
 
 
-def _check_model_name_uniqueness(db, name: str, exclude_name: Optional[str] = None) -> None:
+def _check_model_name_uniqueness(db, name: str, exclude_name: str | None = None) -> None:
     """Checks if model name is unique."""
     existing_model = get_model_by_name(db, name)
     if existing_model and name != exclude_name:
@@ -62,7 +66,7 @@ def _ensure_provider_exists(db, provider_id: int) -> LLMProviderConfig:
 # GENERAL PUBLIC API FUNCTIONS
 # ============================================================================
 
-def list_llm_models() -> List[Model]:
+def list_llm_models() -> list[Model]:
     """Reads available models from DB/Cache and returns them."""
     models = _with_session(get_all_models)
     
@@ -95,9 +99,9 @@ def list_llm_models() -> List[Model]:
     return models
 
 
-def get_models_with_provider_info() -> List[Dict[str, Any]]:
-    """
-    Gets models with provider information for UI display.
+def get_models_with_provider_info() -> list[dict[str, Any]]:
+    """Gets models with provider information for UI display.
+
     Returns:
         List[Dict]: List of dictionaries with model and provider information
     """
@@ -120,24 +124,23 @@ def get_models_with_provider_info() -> List[Dict[str, Any]]:
     return _with_session(_get_models_info)
 
 
-def get_unavailable_models() -> List[Model]:
-    """
-    Gets all models that are marked as unavailable.
+def get_unavailable_models() -> list[Model]:
+    """Gets all models that are marked as unavailable.
     
     Returns:
         List[Model]: List of unavailable models
     """
     def _get_unavailable(db):
-        statement = select(Model).where(Model.is_available == False)
+        statement = select(Model).where(Model.is_available.is_(False))
         return db.exec(statement).all()
     
     return _with_session(_get_unavailable)
 
 
-def create_model_with_validation(name: str, provider_id: int, description: Optional[str] = None,
-                                 version: Optional[str] = None, params: Optional[str] = None) -> Model:
-    """
-    Creates model with business logic validation.
+def create_model_with_validation(name: str, provider_id: int, description: str | None = None,
+                                 version: str | None = None, params: str | None = None) -> Model:
+    """Creates model with business logic validation.
+
     Args:
         name: Model name
         provider_id: Provider ID
@@ -167,11 +170,11 @@ def create_model_with_validation(name: str, provider_id: int, description: Optio
     return _with_session(_create_model)
 
 
-def update_model_with_validation(old_name: str, new_name: Optional[str] = None,
-                                 provider_id: Optional[int] = None, description: Optional[str] = None,
-                                 version: Optional[str] = None, params: Optional[str] = None) -> Optional[Model]:
-    """
-    Updates model with business logic validation.
+def update_model_with_validation(old_name: str, new_name: str | None = None,
+                                 provider_id: int | None = None, description: str | None = None,
+                                 version: str | None = None, params: str | None = None) -> Model | None:
+    """Updates model with business logic validation.
+
     Args:
         old_name: Current model name
         new_name: New model name (optional, None means don't change)
@@ -179,6 +182,7 @@ def update_model_with_validation(old_name: str, new_name: Optional[str] = None,
         description: New description (optional)
         version: New version (optional)
         params: New parameters (optional)
+
     Returns:
         Optional[Model]: The updated model or None if not found
     Raises:
@@ -187,7 +191,7 @@ def update_model_with_validation(old_name: str, new_name: Optional[str] = None,
     validated_old_name = _validate_model_name(old_name)
 
     def _update_model(db):
-        existing_model = _ensure_model_exists(db, validated_old_name)
+        _ensure_model_exists(db, validated_old_name)
 
         validated_new_name = new_name
         if new_name:  # Only validate if new name is provided (not None)
@@ -213,8 +217,8 @@ def update_model_with_validation(old_name: str, new_name: Optional[str] = None,
 
 
 def delete_model_with_checks(model_name: str) -> bool:
-    """
-    Deletes model after business logic checks.
+    """Deletes model after business logic checks.
+
     Args:
         model_name: Name of the model to delete
     Returns:
@@ -257,13 +261,16 @@ def sync_llm_models(delete_missing: bool = False) -> dict:
         for provider in providers:
             provider_name = provider.prov_name.lower()
             if provider_name == 'ollama':
-                print(f"\n🐋 Syncing Ollama models...")
+                print("\n🐋 Syncing Ollama models...")
                 try:
                     ollama_result = _sync_ollama_models(db, provider, delete_missing)
                     results['ollama'] = ollama_result
                     results['total_processed'] += ollama_result['added'] + ollama_result['skipped']
                     deleted_info = f", {ollama_result.get('deleted', 0)} deleted" if delete_missing else ""
-                    print(f"   ✅ {ollama_result['added']} added, {ollama_result['skipped']} skipped, {ollama_result.get('updated', 0)} updated{deleted_info}")
+                    print(
+                        f"   ✅ {ollama_result['added']} added, {ollama_result['skipped']} skipped, "
+                        f"{ollama_result.get('updated', 0)} updated{deleted_info}"
+                    )
                     if ollama_result['errors']:
                         print(f"   ❌ {len(ollama_result['errors'])} errors")
                         for error in ollama_result['errors']:
@@ -274,13 +281,16 @@ def sync_llm_models(delete_missing: bool = False) -> dict:
                     results['ollama']['errors'].append(str(e))
                     
             elif provider_name == 'lm studio':
-                print(f"\n🖥️  Syncing LM Studio models...")
+                print("\n🖥️  Syncing LM Studio models...")
                 try:
                     lmstudio_result = _sync_lmstudio_models(db, provider, delete_missing)
                     results['lm_studio'] = lmstudio_result
                     results['total_processed'] += lmstudio_result['added'] + lmstudio_result['skipped']
                     deleted_info = f", {lmstudio_result.get('deleted', 0)} deleted" if delete_missing else ""
-                    print(f"   ✅ {lmstudio_result['added']} added, {lmstudio_result['skipped']} skipped, {lmstudio_result.get('updated', 0)} updated{deleted_info}")
+                    print(
+                        f"   ✅ {lmstudio_result['added']} added, {lmstudio_result['skipped']} skipped, "
+                        f"{lmstudio_result.get('updated', 0)} updated{deleted_info}"
+                    )
                     if lmstudio_result['errors']:
                         print(f"   ❌ {len(lmstudio_result['errors'])} errors")
                         for error in lmstudio_result['errors']:
@@ -291,7 +301,7 @@ def sync_llm_models(delete_missing: bool = False) -> dict:
                     results['lm_studio']['errors'].append(str(e))
         
         # Show summary
-        print(f"\n📊 Sync Summary:")
+        print("\n📊 Sync Summary:")
         print(f"   Providers found: {', '.join(found_providers) if found_providers else 'None'}")
         print(f"   Total models processed: {results['total_processed']}")
         
@@ -303,9 +313,8 @@ def sync_llm_models(delete_missing: bool = False) -> dict:
     return _with_session(_sync_models)
 
 
-def restore_model(model_name: str) -> Dict[str, Any]:
-    """
-    Restores a deleted Ollama model by downloading it via ollama pull.
+def restore_model(model_name: str) -> dict[str, Any]:
+    """Restores a deleted Ollama model by downloading it via ollama pull.
     
     Args:
         model_name: Name of the model to restore
@@ -365,12 +374,12 @@ def restore_model(model_name: str) -> Dict[str, Any]:
             else:
                 raise RuntimeError(f"Ollama pull failed: {result.stderr}")
                 
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"Model download timed out after 5 minutes")
-        except FileNotFoundError:
-            raise RuntimeError("Ollama command not found. Please ensure Ollama is installed and in PATH")
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError("Model download timed out after 5 minutes") from e
+        except FileNotFoundError as e:
+            raise RuntimeError("Ollama command not found. Please ensure Ollama is installed and in PATH") from e
         except Exception as e:
-            raise RuntimeError(f"Failed to restore model: {str(e)}")
+            raise RuntimeError(f"Failed to restore model: {e}") from e
     
     return _with_session(_restore_model)
 
@@ -379,7 +388,7 @@ def restore_model(model_name: str) -> Dict[str, Any]:
 # OLLAMA-SPECIFIC FUNCTIONS
 # ============================================================================
 
-def _fetch_ollama_models(provider) -> List[Dict[str, Any]]:
+def _fetch_ollama_models(provider) -> list[dict[str, Any]]:
     """Fetches available models from Ollama API."""
     base_url = provider.prov_endpoint or "http://localhost:11434"
     response = requests.get(f"{base_url}/api/tags")
@@ -388,7 +397,7 @@ def _fetch_ollama_models(provider) -> List[Dict[str, Any]]:
     return data.get('models', [])
 
 
-def _create_model_description(model_info: Dict[str, Any]) -> str:
+def _create_model_description(model_info: dict[str, Any]) -> str:
     """Creates a descriptive text for an Ollama model."""
     model_size = model_info.get('size', 0)
     modified_at = model_info.get('modified_at', '')
@@ -401,7 +410,9 @@ def _create_model_description(model_info: Dict[str, Any]) -> str:
     return description
 
 
-def _update_model_availability(db, provider_id: int, available_model_names: set, delete_missing: bool = False) -> tuple[int, int]:
+def _update_model_availability(
+    db, provider_id: int, available_model_names: set, delete_missing: bool = False
+) -> tuple[int, int]:
     """Updates availability status of existing models or deletes them if requested."""
     updated_count = 0
     deleted_count = 0
@@ -434,7 +445,7 @@ def _update_model_availability(db, provider_id: int, available_model_names: set,
     return updated_count, deleted_count
 
 
-def _add_new_ollama_models(db, provider, model_infos: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _add_new_ollama_models(db, provider, model_infos: list[dict[str, Any]]) -> dict[str, Any]:
     """Adds new models to database that don't exist yet."""
     result = {'added': 0, 'skipped': 0, 'errors': []}
     
@@ -486,7 +497,9 @@ def _sync_ollama_models(db, provider, delete_missing: bool = False) -> dict:
         available_model_names = {model.get('name', '') for model in model_infos if model.get('name')}
 
         # Update availability status of existing models (or delete if requested)
-        updated_count, deleted_count = _update_model_availability(db, provider.prov_id, available_model_names, delete_missing)
+        updated_count, deleted_count = _update_model_availability(
+            db, provider.prov_id, available_model_names, delete_missing
+        )
         result['updated'] = updated_count
         result['deleted'] = deleted_count
 
@@ -508,7 +521,7 @@ def _sync_ollama_models(db, provider, delete_missing: bool = False) -> dict:
 # LM STUDIO-SPECIFIC FUNCTIONS
 # ============================================================================
 
-def _fetch_lmstudio_models(provider) -> List[Dict[str, Any]]:
+def _fetch_lmstudio_models(provider) -> list[dict[str, Any]]:
     """Fetches available models from LM Studio API."""
     base_url = provider.prov_endpoint or "http://localhost:1234/v1"
     response = requests.get(f"{base_url}/models")
@@ -517,7 +530,7 @@ def _fetch_lmstudio_models(provider) -> List[Dict[str, Any]]:
     return data.get('data', [])
 
 
-def _create_lmstudio_model_description(model_info: Dict[str, Any]) -> str:
+def _create_lmstudio_model_description(model_info: dict[str, Any]) -> str:
     """Creates a descriptive text for an LM Studio model."""
     model_id = model_info.get('id', '')
     owned_by = model_info.get('owned_by', '')
@@ -529,7 +542,7 @@ def _create_lmstudio_model_description(model_info: Dict[str, Any]) -> str:
     return description
 
 
-def _add_new_lmstudio_models(db, provider, model_infos: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _add_new_lmstudio_models(db, provider, model_infos: list[dict[str, Any]]) -> dict[str, Any]:
     """Adds new LM Studio models to database that don't exist yet."""
     result = {'added': 0, 'skipped': 0, 'errors': []}
     
@@ -582,7 +595,9 @@ def _sync_lmstudio_models(db, provider, delete_missing: bool = False) -> dict:
         available_model_names = {model.get('id', '') for model in model_infos if model.get('id')}
 
         # Update availability status of existing models for this provider (or delete if requested)
-        updated_count, deleted_count = _update_model_availability(db, provider.prov_id, available_model_names, delete_missing)
+        updated_count, deleted_count = _update_model_availability(
+            db, provider.prov_id, available_model_names, delete_missing
+        )
         result['updated'] = updated_count
         result['deleted'] = deleted_count
 

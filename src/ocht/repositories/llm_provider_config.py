@@ -1,16 +1,15 @@
-# llm_provider_config.py
+"""CRUD operations for the LLMProviderConfig entity."""
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Optional, Sequence
 
 from sqlmodel import Session, select
 
 from ocht.core.models import LLMProviderConfig
 
 
-def create_llm_provider_config(db: Session, name: str, api_key: str, endpoint: Optional[str] = None,
-                               default_model: Optional[str] = None) -> LLMProviderConfig:
-    """
-    Creates a new LLM provider config.
+def create_llm_provider_config(db: Session, name: str, api_key: str, endpoint: str | None = None,
+                               default_model: str | None = None, params: str | None = None) -> LLMProviderConfig:
+    """Creates a new LLM provider config.
 
     Args:
         db (Session): The database session.
@@ -18,6 +17,8 @@ def create_llm_provider_config(db: Session, name: str, api_key: str, endpoint: O
         api_key (str): The API key for the LLM provider.
         endpoint (Optional[str], optional): The endpoint URL for the LLM provider. Default is None.
         default_model (Optional[str], optional): The default model for the LLM provider. Default is None.
+        params (Optional[str], optional): JSON string of provider routing preferences (e.g. OpenRouter's
+            `provider` object - quantizations, preferred_min_throughput, etc.). Default is None.
 
     Returns:
         LLMProviderConfig: Das erstellte Konfigurations-Objekt.
@@ -27,6 +28,7 @@ def create_llm_provider_config(db: Session, name: str, api_key: str, endpoint: O
         prov_api_key=api_key,
         prov_endpoint=endpoint,
         prov_default_model=default_model,
+        prov_params=params,
         prov_created_at=datetime.now(),
         prov_updated_at=datetime.now()
     )
@@ -36,9 +38,8 @@ def create_llm_provider_config(db: Session, name: str, api_key: str, endpoint: O
     return llm_provider_config
 
 
-def get_llm_provider_config_by_id(db: Session, config_id: int) -> Optional[LLMProviderConfig]:
-    """
-    Holt eine LLM Provider Konfiguration nach ihrer ID.
+def get_llm_provider_config_by_id(db: Session, config_id: int) -> LLMProviderConfig | None:
+    """Holt eine LLM Provider Konfiguration nach ihrer ID.
 
     Args:
         db (Session): Die Datenbanksitzung.
@@ -52,9 +53,10 @@ def get_llm_provider_config_by_id(db: Session, config_id: int) -> Optional[LLMPr
     return result.one_or_none()
 
 
-def get_all_llm_provider_configs(db: Session, limit: Optional[int] = None, offset: Optional[int] = 0) -> Sequence[LLMProviderConfig]:
-    """
-    Retrieves all LLM provider configurations with optional limitation and offset.
+def get_all_llm_provider_configs(
+    db: Session, limit: int | None = None, offset: int | None = 0
+) -> Sequence[LLMProviderConfig]:
+    """Retrieves all LLM provider configurations with optional limitation and offset.
 
     Args:
         db (Session): The database session.
@@ -79,11 +81,16 @@ def get_all_llm_provider_configs(db: Session, limit: Optional[int] = None, offse
     return db.exec(statement).all()
 
 
-def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] = None, api_key: Optional[str] = None,
-                               endpoint: Optional[str] = None, default_model: Optional[str] = None) -> Optional[
-    LLMProviderConfig]:
-    """
-    Updates an existing LLM provider configuration.
+def update_llm_provider_config(
+    db: Session,
+    config_id: int,
+    name: str | None = None,
+    api_key: str | None = None,
+    endpoint: str | None = None,
+    default_model: str | None = None,
+    params: str | None = None,
+) -> LLMProviderConfig | None:
+    """Updates an existing LLM provider configuration.
 
     Args:
         db (Session): The database session.
@@ -92,6 +99,9 @@ def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] 
         api_key (Optional[str], optional): Der neue API-Schlüssel für die Konfiguration. Standard ist None.
         endpoint (Optional[str], optional): Der neue Endpoint für die Konfiguration. Standard ist None.
         default_model (Optional[str], optional): Das neue Standard-Modell für die Konfiguration. Standard ist None.
+        params (Optional[str], optional): New JSON string of provider routing preferences. `None` leaves the
+            existing value unchanged; pass `""` to explicitly clear it (a JSON string can never legitimately
+            be empty, so this is unambiguous).
 
     Returns:
         Optional[LLMProviderConfig]: Das aktualisierte Konfigurations-Objekt oder None, wenn nicht gefunden.
@@ -108,6 +118,8 @@ def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] 
         config.prov_endpoint = endpoint
     if default_model is not None:
         config.prov_default_model = default_model
+    if params is not None:
+        config.prov_params = params or None
     config.prov_updated_at = datetime.now()
 
     db.add(config)
@@ -118,8 +130,7 @@ def update_llm_provider_config(db: Session, config_id: int, name: Optional[str] 
 
 
 def delete_llm_provider_config(db: Session, config_id: int) -> bool:
-    """
-    Deletes an LLM provider configuration.
+    """Deletes an LLM provider configuration.
 
     Args:
         db (Session): The database session.

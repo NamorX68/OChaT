@@ -1,8 +1,8 @@
-from textual.widgets import Static, Button
-from textual.containers import Vertical, Horizontal
-from textual.screen import ModalScreen
+"""Reusable modal dialogs for confirmations and informational messages."""
 from textual.binding import Binding
-from typing import Optional, Callable
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Button, Static
 
 
 class ConfirmationDialog(ModalScreen):
@@ -23,8 +23,7 @@ class ConfirmationDialog(ModalScreen):
                  cancel_text: str = "Nein",
                  confirm_variant: str = "primary",
                  **kwargs):
-        """
-        Initialize confirmation dialog.
+        """Initialize confirmation dialog.
         
         Args:
             title: Dialog title
@@ -32,6 +31,7 @@ class ConfirmationDialog(ModalScreen):
             confirm_text: Text for confirm button
             cancel_text: Text for cancel button
             confirm_variant: Button variant for confirm button (primary, success, warning, error)
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
         """
         super().__init__(**kwargs)
         self.title = title
@@ -108,14 +108,14 @@ class MessageDialog(ModalScreen):
                  message_type: str = "info",  # info, warning, error, success
                  button_text: str = "OK",
                  **kwargs):
-        """
-        Initialize message dialog.
+        """Initialize message dialog.
         
         Args:
             title: Dialog title
             message: Message to display
             message_type: Type of message (info, warning, error, success)
             button_text: Text for the button
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
         """
         super().__init__(**kwargs)
         self.title = title

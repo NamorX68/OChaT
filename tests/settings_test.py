@@ -1,33 +1,43 @@
+"""Tests for the Setting repository CRUD functions, backed by a real SQLite database."""
 import pytest
-from sqlmodel import create_engine, Session
+from sqlmodel import Session, SQLModel, create_engine, delete
+
 from ocht.core.models import Setting
 from ocht.repositories.setting import (
     create_setting,
-    get_setting_by_key,
+    delete_setting,
     get_all_settings,
+    get_setting_by_key,
     update_setting,
-    delete_setting
 )
 
 # Use a temporary SQLite database for testing
 engine = create_engine("sqlite:///./test.db")
 
+
 def setup_module():
     """Create database tables before tests."""
-    from sqlmodel import SQLModel
     SQLModel.metadata.create_all(engine)
+
 
 def teardown_module():
     """Drop database tables after tests."""
-    from sqlmodel import SQLModel
     SQLModel.metadata.drop_all(engine)
+
 
 @pytest.fixture
 def db_session():
-    """Provide a database session for each test."""
+    """Provide a database session for each test, cleaned up afterwards.
+
+    Individual tests call ``db_session.commit()`` themselves, so a plain rollback after
+    the test would not undo already-committed rows. Deleting all Setting rows here keeps
+    tests independent of execution order and free to reuse literal keys like "test_key".
+    """
     with Session(engine) as session:
         yield session
         session.rollback()
+        session.exec(delete(Setting))
+        session.commit()
 
 def test_create_setting(db_session):
     """Test creating a new setting."""

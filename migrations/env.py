@@ -1,13 +1,15 @@
+"""Alembic environment configuration for running database migrations online and offline."""
 import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
-
+from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
-from ocht.core.models import Workspace, Message, PromptTemplate, Setting, Model, LLMProviderConfig
+
+# Import models so they register themselves on SQLModel.metadata before Alembic
+# autogenerate inspects it. The import is otherwise unused, hence the noqa.
+from ocht.core.models import LLMProviderConfig, Message, Model, PromptTemplate, Setting, Workspace  # noqa: F401
+
 target_metadata = SQLModel.metadata
 
 # this is the Alembic Config object, which provides

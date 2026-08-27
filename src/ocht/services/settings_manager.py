@@ -1,13 +1,16 @@
-from typing import List, Optional, Dict, Any, TypeVar, Callable
+"""Service layer for managing application settings with business-logic validation."""
+from collections.abc import Callable
+from typing import Any, TypeVar
+
 from ocht.core.db import get_session
-from ocht.repositories.setting import (
-    get_all_settings,
-    create_setting,
-    update_setting,
-    delete_setting,
-    get_setting_by_key
-)
 from ocht.core.models import Setting
+from ocht.repositories.setting import (
+    create_setting,
+    delete_setting,
+    get_all_settings,
+    get_setting_by_key,
+    update_setting,
+)
 
 T = TypeVar('T')
 
@@ -32,7 +35,7 @@ def _validate_setting_value(value: str) -> str:
     return value.strip()
 
 
-def _check_setting_key_uniqueness(db, key: str, exclude_key: Optional[str] = None) -> None:
+def _check_setting_key_uniqueness(db, key: str, exclude_key: str | None = None) -> None:
     """Checks if setting key is unique."""
     existing_setting = get_setting_by_key(db, key)
     if existing_setting and key != exclude_key:
@@ -47,9 +50,8 @@ def _ensure_setting_exists(db, key: str) -> Setting:
     return setting
 
 
-def get_all_settings_with_info() -> List[Dict[str, Any]]:
-    """
-    Gets all settings with additional information for UI display.
+def get_all_settings_with_info() -> list[dict[str, Any]]:
+    """Gets all settings with additional information for UI display.
     
     Returns:
         List[Dict]: List of dictionaries with setting information
@@ -69,9 +71,8 @@ def get_all_settings_with_info() -> List[Dict[str, Any]]:
     return _with_session(_get_settings_info)
 
 
-def get_setting_by_key_with_info(key: str) -> Optional[Dict[str, Any]]:
-    """
-    Gets a specific setting by key with additional information.
+def get_setting_by_key_with_info(key: str) -> dict[str, Any] | None:
+    """Gets a specific setting by key with additional information.
     
     Args:
         key: Setting key to retrieve
@@ -94,9 +95,8 @@ def get_setting_by_key_with_info(key: str) -> Optional[Dict[str, Any]]:
 
 
 def create_setting_with_validation(key: str, value: str, 
-                                 workspace_id: Optional[int] = None) -> Setting:
-    """
-    Creates setting with business logic validation.
+                                 workspace_id: int | None = None) -> Setting:
+    """Creates setting with business logic validation.
     
     Args:
         key: Setting key
@@ -123,10 +123,9 @@ def create_setting_with_validation(key: str, value: str,
     return _with_session(_create_setting)
 
 
-def update_setting_with_validation(original_key: str, new_key: Optional[str] = None,
-                                 value: Optional[str] = None) -> Optional[Setting]:
-    """
-    Updates setting with business logic validation.
+def update_setting_with_validation(original_key: str, new_key: str | None = None,
+                                 value: str | None = None) -> Setting | None:
+    """Updates setting with business logic validation.
     
     Args:
         original_key: Original setting key
@@ -140,7 +139,7 @@ def update_setting_with_validation(original_key: str, new_key: Optional[str] = N
         ValueError: On validation errors
     """
     def _update_setting(db):
-        existing_setting = _ensure_setting_exists(db, original_key)
+        _ensure_setting_exists(db, original_key)
         
         validated_new_key = new_key
         if new_key:  # Only validate if new_key is provided (not None)
@@ -163,8 +162,7 @@ def update_setting_with_validation(original_key: str, new_key: Optional[str] = N
 
 
 def delete_setting_with_checks(key: str) -> bool:
-    """
-    Deletes setting after business logic checks.
+    """Deletes setting after business logic checks.
     
     Args:
         key: Key of the setting to delete
@@ -182,9 +180,8 @@ def delete_setting_with_checks(key: str) -> bool:
     return _with_session(_delete_setting)
 
 
-def get_workspace_settings(workspace_id: int) -> List[Setting]:
-    """
-    Gets all settings for a specific workspace.
+def get_workspace_settings(workspace_id: int) -> list[Setting]:
+    """Gets all settings for a specific workspace.
     
     Args:
         workspace_id: Workspace ID
@@ -199,9 +196,8 @@ def get_workspace_settings(workspace_id: int) -> List[Setting]:
     return _with_session(_get_workspace_settings)
 
 
-def get_global_settings() -> List[Setting]:
-    """
-    Gets all global (non-workspace-specific) settings.
+def get_global_settings() -> list[Setting]:
+    """Gets all global (non-workspace-specific) settings.
     
     Returns:
         List[Setting]: List of global settings

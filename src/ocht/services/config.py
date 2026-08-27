@@ -1,3 +1,4 @@
+"""Service layer for loading, exporting, and importing application configuration."""
 
 
 def open_conf():

@@ -1,20 +1,20 @@
-import pytest
+"""Tests for the Model repository CRUD functions."""
 from unittest import mock
-from sqlalchemy.orm import Session
-from ocht.repositories.model import (
-    create_model,
-    get_model_by_name,
-    get_all_models,
-    update_model,
-    delete_model
-)
+
+import pytest
+from sqlmodel import Session
+
 from ocht.core.models import Model
+from ocht.repositories.model import create_model, delete_model, get_all_models, get_model_by_name, update_model
+
 
 @pytest.fixture
 def mock_db():
+    """Provides an autospecced mock of a SQLAlchemy Session."""
     return mock.create_autospec(Session)
 
 def test_create_model(mock_db):
+    """Test that create_model() adds, commits, and refreshes the new model."""
     # Arrange
     db = mock_db
     provider_id = 1
@@ -22,7 +22,7 @@ def test_create_model(mock_db):
     description = "Test description"
 
     # Act
-    result = create_model(db, provider_id, model_name, description)
+    result = create_model(db, model_name, provider_id, description)
 
     # Assert
     db.add.assert_called_once()
@@ -33,6 +33,7 @@ def test_create_model(mock_db):
     assert result.model_description == description
 
 def test_get_model_by_name_found(mock_db):
+    """Test that get_model_by_name() returns the matching model when found."""
     # Arrange
     db = mock_db
     model_name = "test-model"
@@ -46,6 +47,7 @@ def test_get_model_by_name_found(mock_db):
     assert result == mock_model
 
 def test_get_model_by_name_not_found(mock_db):
+    """Test that get_model_by_name() returns None when no model matches."""
     # Arrange
     db = mock_db
     model_name = "non-existent"
@@ -58,6 +60,7 @@ def test_get_model_by_name_not_found(mock_db):
     assert result is None
 
 def test_get_all_models(mock_db):
+    """Test that get_all_models() returns all models from the session."""
     # Arrange
     db = mock_db
     mock_models = [mock.create_autospec(Model) for _ in range(3)]
@@ -71,6 +74,7 @@ def test_get_all_models(mock_db):
     assert all(isinstance(m, Model) for m in result)
 
 def test_update_model(mock_db):
+    """Test that update_model() updates and persists the model's description."""
     # Arrange
     db = mock_db
     model_name = "test-model"
@@ -79,7 +83,7 @@ def test_update_model(mock_db):
     db.exec.return_value.one_or_none.return_value = mock_model
 
     # Act
-    result = update_model(db, model_name, description=new_description)
+    result = update_model(db, model_name, model_description=new_description)
 
     # Assert
     assert result.model_description == new_description
@@ -87,6 +91,7 @@ def test_update_model(mock_db):
     db.refresh.assert_called_once()
 
 def test_delete_model(mock_db):
+    """Test that delete_model() deletes the model and returns True."""
     # Arrange
     db = mock_db
     model_name = "test-model"
@@ -102,6 +107,7 @@ def test_delete_model(mock_db):
     db.commit.assert_called_once()
 
 def test_delete_model_not_found(mock_db):
+    """Test that delete_model() returns False when no model matches."""
     # Arrange
     db = mock_db
     model_name = "non-existent"

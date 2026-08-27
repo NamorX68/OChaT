@@ -1,11 +1,11 @@
+"""SQLModel entity definitions for OChaT's persisted domain objects."""
 from datetime import datetime
-from typing import Optional
-from sqlmodel import SQLModel, Field
+
+from sqlmodel import Field, SQLModel
 
 
 class Workspace(SQLModel, table=True):
-    """
-    Represents a chat workspace.
+    """Represents a chat workspace.
 
     Attributes:
         work_id (Optional[int]): Primary key of the workspace.
@@ -15,17 +15,16 @@ class Workspace(SQLModel, table=True):
         work_updated_at (datetime): Last update timestamp.
         work_description (Optional[str]): Optional description about the workspace.
     """
-    work_id: Optional[int] = Field(default=None, primary_key=True)
+    work_id: int | None = Field(default=None, primary_key=True)
     work_name: str
     work_default_model: str = Field(foreign_key="llmproviderconfig.prov_id")
     work_created_at: datetime = Field(default_factory=datetime.now)
     work_updated_at: datetime = Field(default_factory=datetime.now)
-    work_description: Optional[str] = None
+    work_description: str | None = None
 
 
 class Message(SQLModel, table=True):
-    """
-    Represents a message in a chat workspace.
+    """Represents a message in a chat workspace.
 
     Attributes:
         msg_id (Optional[int]): Primary key of the message.
@@ -38,20 +37,19 @@ class Message(SQLModel, table=True):
         msg_token_count (Optional[int]): Token count of the message.
         msg_metadata (Optional[str]): Additional metadata stored as JSON string.
     """
-    msg_id: Optional[int] = Field(default=None, primary_key=True)
+    msg_id: int | None = Field(default=None, primary_key=True)
     msg_workspace_id: int = Field(foreign_key="workspace.work_id")
     msg_role: str
     msg_content: str
     msg_created_at: datetime = Field(default_factory=datetime.now)
-    msg_updated_at: Optional[datetime] = None
-    msg_parent_id: Optional[int] = Field(default=None, foreign_key="message.msg_id")
-    msg_token_count: Optional[int] = None
-    msg_metadata: Optional[str] = None
+    msg_updated_at: datetime | None = None
+    msg_parent_id: int | None = Field(default=None, foreign_key="message.msg_id")
+    msg_token_count: int | None = None
+    msg_metadata: str | None = None
 
 
 class LLMProviderConfig(SQLModel, table=True):
-    """
-    Represents a configuration for an LLM provider.
+    """Represents a configuration for an LLM provider.
 
     Attributes:
         prov_id (Optional[int]): Primary key of the configuration.
@@ -63,19 +61,18 @@ class LLMProviderConfig(SQLModel, table=True):
         prov_created_at (datetime): Creation timestamp.
         prov_updated_at (datetime): Last update timestamp.
     """
-    prov_id: Optional[int] = Field(default=None, primary_key=True)
+    prov_id: int | None = Field(default=None, primary_key=True)
     prov_name: str
     prov_api_key: str
-    prov_endpoint: Optional[str] = None
-    prov_default_model: Optional[str] = None
-    prov_params: Optional[str] = None
+    prov_endpoint: str | None = None
+    prov_default_model: str | None = None
+    prov_params: str | None = None
     prov_created_at: datetime = Field(default_factory=datetime.now)
     prov_updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class Model(SQLModel, table=True):
-    """
-    Represents an available LLM model.
+    """Represents an available LLM model.
 
     Attributes:
         model_name (str): Primary key of the model (e.g., 'gpt-4').
@@ -90,18 +87,17 @@ class Model(SQLModel, table=True):
     """
     model_name: str = Field(primary_key=True)
     model_provider_id: int = Field(foreign_key="llmproviderconfig.prov_id")
-    model_description: Optional[str] = None
-    model_version: Optional[str] = None
+    model_description: str | None = None
+    model_version: str | None = None
     model_created_at: datetime = Field(default_factory=datetime.now)
     model_updated_at: datetime = Field(default_factory=datetime.now)
-    model_params: Optional[str] = None
+    model_params: str | None = None
     is_available: bool = Field(default=True)
-    last_checked: Optional[datetime] = None
+    last_checked: datetime | None = None
 
 
 class Setting(SQLModel, table=True):
-    """
-    Represents a general key-value setting.
+    """Represents a general key-value setting.
 
     Attributes:
         setting_key (str): Primary key name of the setting.
@@ -112,14 +108,13 @@ class Setting(SQLModel, table=True):
     """
     setting_key: str = Field(primary_key=True)
     setting_value: str
-    setting_workspace_id: Optional[int] = Field(default=None, foreign_key="workspace.work_id")
+    setting_workspace_id: int | None = Field(default=None, foreign_key="workspace.work_id")
     setting_created_at: datetime = Field(default_factory=datetime.now)
     setting_updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class PromptTemplate(SQLModel, table=True):
-    """
-    Represents a reusable prompt template.
+    """Represents a reusable prompt template.
 
     Attributes:
         templ_id (Optional[int]): Primary key of the template.
@@ -129,9 +124,9 @@ class PromptTemplate(SQLModel, table=True):
         templ_created_at (datetime): Timestamp when the template was created.
         templ_updated_at (datetime): Timestamp when the template was last updated.
     """
-    templ_id: Optional[int] = Field(default=None, primary_key=True)
+    templ_id: int | None = Field(default=None, primary_key=True)
     templ_name: str
-    templ_description: Optional[str] = None
+    templ_description: str | None = None
     templ_text: str
     templ_created_at: datetime = Field(default_factory=datetime.now)
     templ_updated_at: datetime = Field(default_factory=datetime.now)

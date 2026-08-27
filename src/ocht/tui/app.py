@@ -1,23 +1,26 @@
+"""Main Textual application: the OChaT chat terminal user interface."""
 import asyncio
 import os
+
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Input
-from textual.containers import VerticalScroll, Horizontal
-from ocht.tui.widgets.chat_bubble import ChatBubble
-from ocht.tui.widgets.custom_footer import CustomFooter
+from textual.containers import VerticalScroll
+from textual.widgets import Header, Input
+
+from ocht.services.adapter_manager import adapter_manager
+from ocht.tui.screens.model_manager import ModelManagerScreen
+from ocht.tui.screens.model_selector import ModelSelectorModal
 from ocht.tui.screens.provider_manager import ProviderManagerScreen
 from ocht.tui.screens.provider_selector import ProviderSelectorModal
-from ocht.tui.screens.model_selector import ModelSelectorModal
-from ocht.tui.screens.model_manager import ModelManagerScreen
 from ocht.tui.screens.settings_manager import SettingsManagerScreen
 from ocht.tui.screens.workspace_manager import WorkspaceManagerScreen
 from ocht.tui.screens.workspace_selector import WorkspaceSelectorModal
+from ocht.tui.widgets.chat_bubble import ChatBubble
 from ocht.tui.widgets.confirmation_dialog import ConfirmationDialog
-from ocht.services.adapter_manager import adapter_manager
+from ocht.tui.widgets.custom_footer import CustomFooter
 
 
 class ChatApp(App):
-    """Elegant Chat Terminal User Interface"""
+    """Elegant Chat Terminal User Interface."""
 
     TITLE = "OChaT"
 
@@ -257,8 +260,10 @@ class ChatApp(App):
                 # If we got partial content, finalize it first
                 bot_bubble.finalize()
             else:
-                # Remove empty bubble and show error
-                await bot_bubble.parent.remove()
+                # Remove empty bubble and show error. Note: bot_bubble is mounted directly into
+                # #chat-container by _add_message(), so bot_bubble.parent IS the container -
+                # removing the bubble itself, not its parent, is what's actually intended here.
+                await bot_bubble.remove()
 
             error_msg = f"❌ **Error:** {str(e)}\n\nPlease check your configuration."
             self._add_message(error_msg, "bot", "error")
@@ -280,10 +285,12 @@ class ChatApp(App):
         try:
             # Use async method instead of streaming
             answer = await self.adapter.send_prompt_async(prompt)
-            await typing_bubble.parent.remove()
+            # typing_bubble is mounted directly into #chat-container, so removing typing_bubble
+            # itself (not .parent, which is the container) is what's intended here.
+            await typing_bubble.remove()
             self._add_message(answer, "bot")
         except Exception as e:
-            await typing_bubble.parent.remove()
+            await typing_bubble.remove()
             error_msg = f"❌ **Error:** {str(e)}\n\nPlease check your configuration."
             self._add_message(error_msg, "bot", "error")
 
@@ -428,7 +435,9 @@ class ChatApp(App):
 
                         # Update adapter manager and app adapter
                         # Use default model from provider or first available model
-                        default_model = result.prov_default_model or self._get_first_available_model_for_provider(result.prov_id)
+                        default_model = result.prov_default_model or self._get_first_available_model_for_provider(
+                            result.prov_id
+                        )
                         if default_model and adapter_manager.switch_adapter(result.prov_id, default_model):
                             self.adapter = adapter_manager.get_current_adapter()
                             self._update_footer_adapter_info()
@@ -441,7 +450,10 @@ class ChatApp(App):
                         self.push_screen(
                             ConfirmationDialog(
                                 title="Provider wechseln",
-                                message="Beim Wechsel des Providers geht der aktuelle Chat verloren.\nMöchten Sie trotzdem fortfahren?",
+                                message=(
+                                    "Beim Wechsel des Providers geht der aktuelle Chat verloren.\n"
+                                    "Möchten Sie trotzdem fortfahren?"
+                                ),
                                 confirm_text="Ja, wechseln",
                                 cancel_text="Abbrechen",
                                 confirm_variant="warning",
@@ -450,7 +462,9 @@ class ChatApp(App):
                         )
                     else:
                         # No active chat, switch directly
-                        default_model = result.prov_default_model or self._get_first_available_model_for_provider(result.prov_id)
+                        default_model = result.prov_default_model or self._get_first_available_model_for_provider(
+                            result.prov_id
+                        )
                         if default_model and adapter_manager.switch_adapter(result.prov_id, default_model):
                             self.adapter = adapter_manager.get_current_adapter()
                             self.add_note(f"✅ Provider gewechselt: {result.prov_name}")
@@ -458,7 +472,9 @@ class ChatApp(App):
                             self.add_note("❌ Fehler beim Wechseln des Providers")
                 else:
                     # Same provider or no current provider, no confirmation needed
-                    default_model = result.prov_default_model or self._get_first_available_model_for_provider(result.prov_id)
+                    default_model = result.prov_default_model or self._get_first_available_model_for_provider(
+                        result.prov_id
+                    )
                     if default_model and adapter_manager.switch_adapter(result.prov_id, default_model):
                         self.adapter = adapter_manager.get_current_adapter()
                         self._update_footer_adapter_info()
@@ -510,7 +526,10 @@ class ChatApp(App):
                 self.push_screen(
                     ConfirmationDialog(
                         title="Modell wechseln",
-                        message="Beim Wechsel des Modells geht der aktuelle Chat verloren.\nMöchten Sie trotzdem fortfahren?",
+                        message=(
+                            "Beim Wechsel des Modells geht der aktuelle Chat verloren.\n"
+                            "Möchten Sie trotzdem fortfahren?"
+                        ),
                         confirm_text="Ja, wechseln",
                         cancel_text="Abbrechen",
                         confirm_variant="warning",
@@ -567,8 +586,8 @@ class ChatApp(App):
     
     def _get_first_available_model_for_provider(self, provider_id: int) -> str:
         """Get the first available model name for a given provider."""
-        from ocht.repositories.model import get_models_by_provider
         from ocht.core.db import get_session
+        from ocht.repositories.model import get_models_by_provider
         
         try:
             with get_session() as db:

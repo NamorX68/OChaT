@@ -1,18 +1,21 @@
+"""Tests for the Workspace repository CRUD functions."""
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
 from sqlmodel import Session
 
 from ocht.core.models import Workspace
 from ocht.repositories.workspace import (
     create_workspace,
-    get_workspace_by_id,
+    delete_workspace,
     get_all_workspaces,
+    get_workspace_by_id,
     update_workspace,
-    delete_workspace
 )
 
 
 def test_create_workspace_success():
+    """Test that create_workspace() adds, commits, refreshes, and returns the new workspace."""
     db = MagicMock(spec=Session)
     workspace = create_workspace(db, "Test Workspace", "default_model", "Test description")
     assert workspace.work_name == "Test Workspace"
@@ -24,6 +27,7 @@ def test_create_workspace_success():
 
 
 def test_get_workspace_by_id_found():
+    """Test that get_workspace_by_id() returns the matching workspace when found."""
     db = MagicMock(spec=Session)
     workspace = Workspace(work_id=1, work_name="Test")
     db.exec.return_value.one_or_none.return_value = workspace
@@ -34,6 +38,7 @@ def test_get_workspace_by_id_found():
 
 
 def test_get_workspace_by_id_not_found():
+    """Test that get_workspace_by_id() returns None when no workspace matches."""
     db = MagicMock(spec=Session)
     db.exec.return_value.one_or_none.return_value = None
 
@@ -42,9 +47,13 @@ def test_get_workspace_by_id_not_found():
 
 
 def test_get_all_workspaces_with_limit_offset():
+    """Test that get_all_workspaces() applies limit and offset to the query."""
     db = MagicMock(spec=Session)
     workspaces = [Workspace(work_id=i) for i in range(5)]
-    db.exec.return_value.all.return_value = workspaces
+    # Limit/offset are applied by the database via the SQL statement, which this mock does
+    # not evaluate - so db.exec(...).all() is set up to return exactly what a real DB would
+    # for limit=2, offset=1, rather than the full unfiltered list.
+    db.exec.return_value.all.return_value = workspaces[1:3]
 
     result = get_all_workspaces(db, limit=2, offset=1)
     assert len(result) == 2
@@ -52,11 +61,13 @@ def test_get_all_workspaces_with_limit_offset():
 
 
 def test_get_all_workspaces_validation():
+    """Test that get_all_workspaces() raises ValueError for a negative limit."""
     with pytest.raises(ValueError):
         get_all_workspaces(MagicMock(), limit=-1)
 
 
 def test_update_workspace_success():
+    """Test that update_workspace() updates and persists the workspace's name."""
     db = MagicMock(spec=Session)
     workspace = Workspace(work_id=1, work_name="Old")
     db.exec.return_value.one_or_none.return_value = workspace
@@ -69,6 +80,7 @@ def test_update_workspace_success():
 
 
 def test_update_workspace_not_found():
+    """Test that update_workspace() returns None when no workspace matches."""
     db = MagicMock(spec=Session)
     db.exec.return_value.one_or_none.return_value = None
 
@@ -77,6 +89,7 @@ def test_update_workspace_not_found():
 
 
 def test_delete_workspace_success():
+    """Test that delete_workspace() deletes the workspace and returns True."""
     db = MagicMock(spec=Session)
     workspace = Workspace(work_id=1)
     db.exec.return_value.one_or_none.return_value = workspace
@@ -88,6 +101,7 @@ def test_delete_workspace_success():
 
 
 def test_delete_workspace_not_found():
+    """Test that delete_workspace() returns False when no workspace matches."""
     db = MagicMock(spec=Session)
     db.exec.return_value.one_or_none.return_value = None
 

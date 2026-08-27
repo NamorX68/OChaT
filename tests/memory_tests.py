@@ -1,6 +1,7 @@
+"""Tests for the HybridMemoryStrategy conversation memory implementation."""
 import pytest
-import asyncio
-from langchain.schema import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage
+
 from ocht.adapters.memory import HybridMemoryStrategy, MemoryConfig
 
 

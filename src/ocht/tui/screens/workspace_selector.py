@@ -1,8 +1,9 @@
-from textual.widgets import Static, ListItem, ListView, Button
-from textual.containers import Vertical, Horizontal
-from textual.screen import ModalScreen
+"""TUI modal for selecting a chat workspace."""
 from textual.binding import Binding
-from typing import List, Optional
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Button, ListItem, ListView, Static
+
 from ocht.core.models import Workspace
 from ocht.services.workspace_manager import get_available_workspaces
 
@@ -18,9 +19,14 @@ class WorkspaceSelectorModal(ModalScreen):
     ]
 
     def __init__(self, **kwargs):
+        """Initializes the modal with an empty workspace list and no selection.
+
+        Args:
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
+        """
         super().__init__(**kwargs)
-        self.workspaces: List[Workspace] = []
-        self.selected_workspace: Optional[Workspace] = None
+        self.workspaces: list[Workspace] = []
+        self.selected_workspace: Workspace | None = None
 
     def compose(self):
         """Compose the workspace selector modal."""
@@ -51,7 +57,9 @@ class WorkspaceSelectorModal(ModalScreen):
             workspace_list.clear()
 
             if not self.workspaces:
-                workspace_list.append(ListItem(Static("No workspaces found. Use workspace management to add workspaces.")))
+                workspace_list.append(
+                    ListItem(Static("No workspaces found. Use workspace management to add workspaces."))
+                )
                 return
 
             for workspace in self.workspaces:

@@ -1,7 +1,8 @@
-from textual.widgets import Static
-from textual.reactive import reactive
+"""Custom footer widget showing keybindings and the active adapter/model."""
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.reactive import reactive
+from textual.widgets import Static
 
 
 class CustomFooter(Static):
@@ -40,6 +41,7 @@ class CustomFooter(Static):
     adapter_info = reactive("No adapter configured")
     
     def __init__(self, *args, **kwargs):
+        """Initializes the footer, forwarding all arguments to `Static`."""
         super().__init__(*args, **kwargs)
     
     def compose(self) -> ComposeResult:
@@ -63,7 +65,7 @@ class CustomFooter(Static):
                 bindings = []
                 for binding in self.app.BINDINGS:
                     if len(binding) >= 3:
-                        key, action, description = binding[0], binding[1], binding[2]
+                        key = binding[0]
                         if key == "ctrl+c":
                             bindings.append("^C Quit")
                         elif key == "ctrl+l":

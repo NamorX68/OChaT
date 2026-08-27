@@ -1,20 +1,26 @@
-import pytest
+"""Tests for the PromptTemplate repository CRUD functions."""
 from unittest import mock
-from sqlalchemy.orm import Session
+
+import pytest
+from sqlmodel import Session
+
+from ocht.core.models import PromptTemplate
 from ocht.repositories.prompt_template import (
     create_prompt_template,
-    get_prompt_template_by_id,
+    delete_prompt_template,
     get_all_prompt_templates,
+    get_prompt_template_by_id,
     update_prompt_template,
-    delete_prompt_template
 )
-from ocht.core.models import PromptTemplate
+
 
 @pytest.fixture
 def mock_db():
+    """Provides an autospecced mock of a SQLAlchemy Session."""
     return mock.create_autospec(Session)
 
 def test_create_prompt_template(mock_db):
+    """Test that create_prompt_template() adds, commits, and refreshes the new template."""
     # Arrange
     db = mock_db
     name = "test-template"
@@ -33,6 +39,7 @@ def test_create_prompt_template(mock_db):
     assert result.templ_description == description
 
 def test_get_prompt_template_by_id_found(mock_db):
+    """Test that get_prompt_template_by_id() returns the matching template when found."""
     # Arrange
     db = mock_db
     template_id = 1
@@ -46,6 +53,7 @@ def test_get_prompt_template_by_id_found(mock_db):
     assert result == mock_template
 
 def test_get_prompt_template_by_id_not_found(mock_db):
+    """Test that get_prompt_template_by_id() returns None when no template matches."""
     # Arrange
     db = mock_db
     template_id = 999
@@ -58,6 +66,7 @@ def test_get_prompt_template_by_id_not_found(mock_db):
     assert result is None
 
 def test_get_all_prompt_templates(mock_db):
+    """Test that get_all_prompt_templates() returns all templates from the session."""
     # Arrange
     db = mock_db
     mock_templates = [mock.create_autospec(PromptTemplate) for _ in range(3)]
@@ -71,6 +80,7 @@ def test_get_all_prompt_templates(mock_db):
     assert all(isinstance(m, PromptTemplate) for m in result)
 
 def test_update_prompt_template(mock_db):
+    """Test that update_prompt_template() updates and persists the template's fields."""
     # Arrange
     db = mock_db
     template_id = 1
@@ -91,6 +101,7 @@ def test_update_prompt_template(mock_db):
     db.refresh.assert_called_once()
 
 def test_delete_prompt_template(mock_db):
+    """Test that delete_prompt_template() deletes the template and returns True."""
     # Arrange
     db = mock_db
     template_id = 1
@@ -106,6 +117,7 @@ def test_delete_prompt_template(mock_db):
     db.commit.assert_called_once()
 
 def test_delete_prompt_template_not_found(mock_db):
+    """Test that delete_prompt_template() returns False when no template matches."""
     # Arrange
     db = mock_db
     template_id = 999

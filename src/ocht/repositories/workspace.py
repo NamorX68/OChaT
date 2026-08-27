@@ -1,6 +1,6 @@
-# CRUD functions for workspace
+"""CRUD functions for Workspace."""
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Optional, Sequence
 
 from sqlmodel import Session, select
 
@@ -8,8 +8,7 @@ from ocht.core.models import Workspace
 
 
 def create_workspace(db: Session, name: str, default_model: str, description: str = None) -> Workspace:
-    """
-    Creates a new workspace.
+    """Creates a new workspace.
 
     Args:
         db (Session): The database session.
@@ -34,8 +33,7 @@ def create_workspace(db: Session, name: str, default_model: str, description: st
 
 
 def get_workspace_by_id(db: Session, workspace_id: int) -> Workspace:
-    """
-    Retrieves a workspace by its ID.
+    """Retrieves a workspace by its ID.
 
     Args:
         db (Session): The database session.
@@ -49,9 +47,8 @@ def get_workspace_by_id(db: Session, workspace_id: int) -> Workspace:
     return result.one_or_none()
 
 
-def get_all_workspaces(db: Session, limit: Optional[int] = None, offset: Optional[int] = 0) -> Sequence[Workspace]:
-    """
-    Retrieves all workspaces with optional limitation and offset.
+def get_all_workspaces(db: Session, limit: int | None = None, offset: int | None = 0) -> Sequence[Workspace]:
+    """Retrieves all workspaces with optional limitation and offset.
 
     Args:
         db (Session): The database session.
@@ -75,9 +72,8 @@ def get_all_workspaces(db: Session, limit: Optional[int] = None, offset: Optiona
 
 
 def update_workspace(db: Session, workspace_id: int, name: str = None, default_model: str = None,
-                     description: str = None) -> Optional[Workspace]:
-    """
-    Updates an existing workspace.
+                     description: str = None) -> Workspace | None:
+    """Updates an existing workspace.
 
     Args:
         db (Session): The database session.
@@ -110,8 +106,7 @@ def update_workspace(db: Session, workspace_id: int, name: str = None, default_m
 
 
 def delete_workspace(db: Session, workspace_id: int) -> bool:
-    """
-    Deletes a workspace.
+    """Deletes a workspace.
 
     Args:
         db (Session): The database session.

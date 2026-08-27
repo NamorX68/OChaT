@@ -1,14 +1,16 @@
+"""Abstract base interface that all LLM adapters must implement."""
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
+
 
 class LLMAdapter(ABC):
     """Einheitliches Interface für alle LLM-Adapter."""
 
     @abstractmethod
     async def send_prompt_async(self, prompt: str, **kwargs) -> str:
-        """
-        Sendet einen Prompt asynchron an den LLM.
+        """Sendet einen Prompt asynchron an den LLM.
 
         Args:
             prompt: Der Eingabetext für das LLM.
@@ -21,8 +23,7 @@ class LLMAdapter(ABC):
 
     @abstractmethod
     def send_prompt_stream(self, prompt: str, **kwargs) -> AsyncIterator[str]:
-        """
-        Sendet einen Prompt an den LLM und gibt Streaming-Antwort zurück.
+        """Sendet einen Prompt an den LLM und gibt Streaming-Antwort zurück.
 
         Args:
             prompt: Der Eingabetext für das LLM.
@@ -34,8 +35,8 @@ class LLMAdapter(ABC):
         ...
 
     def send_prompt(self, prompt: str, **kwargs) -> str:
-        """
-        Synchroner Wrapper für send_prompt_async.
+        """Synchroner Wrapper für send_prompt_async.
+
         Erkennt automatisch ob Event Loop läuft.
 
         Args:
@@ -47,7 +48,7 @@ class LLMAdapter(ABC):
         """
         try:
             # Prüfe ob Event Loop bereits läuft
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # Wenn ja, nutze run_in_executor für thread-based execution
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -60,8 +61,7 @@ class LLMAdapter(ABC):
             return asyncio.run(self.send_prompt_async(prompt, **kwargs))
 
     def _convert_message_to_tuple(self, msg: Any) -> tuple[str, str]:
-        """
-        Konvertiert LangChain-Message zu (role, content) Tupel.
+        """Konvertiert LangChain-Message zu (role, content) Tupel.
 
         Standard-Implementierung für die meisten LangChain Message-Types.
         Kann in Subklassen überschrieben werden, falls Provider-spezifische

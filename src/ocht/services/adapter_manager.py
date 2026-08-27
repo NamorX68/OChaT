@@ -1,11 +1,16 @@
-from typing import Optional, Dict, Any, TypeVar, Callable
-from ocht.core.db import get_session
+"""Service for managing the active LLM adapter and its provider/model configuration."""
+import json
+from collections.abc import Callable
+from typing import Any, TypeVar
+
 from ocht.adapters.base import LLMAdapter
 from ocht.adapters.ollama import OllamaAdapter
 from ocht.adapters.openai_compatible import OpenAICompatibleAdapter
-from ocht.repositories.setting import get_setting_by_key, create_setting, update_setting
+from ocht.core.db import get_session
+from ocht.core.models import LLMProviderConfig
 from ocht.repositories.llm_provider_config import get_llm_provider_config_by_id
 from ocht.repositories.model import get_model_by_name
+from ocht.repositories.setting import create_setting, get_setting_by_key, update_setting
 
 T = TypeVar('T')
 
@@ -16,6 +21,36 @@ def _with_session(func: Callable) -> T:
         return func(db)
 
 
+def _build_openai_compatible_params(provider_config: LLMProviderConfig) -> dict[str, Any]:
+    """Builds the `default_params` for OpenAICompatibleAdapter, including provider routing prefs.
+
+    `LLMProviderConfig.prov_params` is a JSON object of OpenAI-compatible "extra body" routing
+    preferences (e.g. OpenRouter's `provider` object - quantization filters, throughput/latency
+    preferences, provider allow/deny lists). It's forwarded verbatim via `ChatOpenAI`'s
+    `extra_body={"provider": ...}`, which the `openai` SDK merges into the raw request JSON - so
+    any field OpenRouter's provider-routing API supports can be configured here without adapter
+    code changes. See https://openrouter.ai/docs/guides/routing/provider-selection.
+
+    A malformed `prov_params` value is ignored (falls back to default provider routing) rather
+    than blocking the adapter switch entirely.
+
+    Args:
+        provider_config: The provider configuration to build params for.
+
+    Returns:
+        Params dict ready to pass as `default_params` to `OpenAICompatibleAdapter`.
+    """
+    default_params: dict[str, Any] = {"temperature": 0.7}
+    if provider_config.prov_params:
+        try:
+            provider_routing = json.loads(provider_config.prov_params)
+        except (json.JSONDecodeError, TypeError):
+            provider_routing = None
+        if isinstance(provider_routing, dict) and provider_routing:
+            default_params["extra_body"] = {"provider": provider_routing}
+    return default_params
+
+
 class AdapterManager:
     """Service for managing LLM adapters and their configuration."""
     
@@ -23,25 +58,25 @@ class AdapterManager:
     CURRENT_MODEL_KEY = "current_model_name"
     
     def __init__(self):
-        self._current_adapter: Optional[LLMAdapter] = None
-        self._current_provider_id: Optional[int] = None
-        self._current_model_name: Optional[str] = None
+        """Initializes the manager with no active adapter, provider, or model selected."""
+        self._current_adapter: LLMAdapter | None = None
+        self._current_provider_id: int | None = None
+        self._current_model_name: str | None = None
     
-    def get_current_adapter(self) -> Optional[LLMAdapter]:
+    def get_current_adapter(self) -> LLMAdapter | None:
         """Get the currently active adapter."""
         return self._current_adapter
     
-    def get_current_provider_id(self) -> Optional[int]:
+    def get_current_provider_id(self) -> int | None:
         """Get the currently selected provider ID."""
         return self._current_provider_id
     
-    def get_current_model_name(self) -> Optional[str]:
+    def get_current_model_name(self) -> str | None:
         """Get the currently selected model name."""
         return self._current_model_name
     
     def load_settings_on_startup(self) -> bool:
-        """
-        Load provider and model settings on app startup.
+        """Load provider and model settings on app startup.
         
         Returns:
             bool: True if settings were loaded successfully, False if missing
@@ -88,8 +123,7 @@ class AdapterManager:
         _with_session(_save_settings)
     
     def switch_adapter(self, provider_id: int, model_name: str) -> bool:
-        """
-        Switch to a new adapter configuration.
+        """Switch to a new adapter configuration.
         
         Args:
             provider_id: ID of the provider
@@ -104,8 +138,7 @@ class AdapterManager:
         return False
     
     def _create_adapter(self, provider_id: int, model_name: str) -> bool:
-        """
-        Create and configure adapter based on provider and model.
+        """Create and configure adapter based on provider and model.
         
         Args:
             provider_id: ID of the provider configuration
@@ -155,13 +188,15 @@ class AdapterManager:
                         model=actual_model_name,
                         default_params={"temperature": 0.5}
                     )
-                elif provider_name in ["openai", "lm studio"]:
-                    # Use OpenAI-compatible adapter for both OpenAI and LM Studio
+                elif provider_name in ["openai", "lm studio", "openrouter"]:
+                    # Use OpenAI-compatible adapter for OpenAI, LM Studio, and OpenRouter -
+                    # all three speak the OpenAI chat-completions API, just with different
+                    # base_url/api_key configuration on the LLMProviderConfig row.
                     self._current_adapter = OpenAICompatibleAdapter(
                         model=actual_model_name,
                         api_key=provider_config.prov_api_key,
                         base_url=provider_config.prov_endpoint,
-                        default_params={"temperature": 0.7}
+                        default_params=_build_openai_compatible_params(provider_config)
                     )
                 else:
                     # Unsupported provider
@@ -193,14 +228,14 @@ class AdapterManager:
         return _with_session(_check_model)
     
     def has_active_chat(self) -> bool:
-        """
-        Check if there's an active chat session.
+        """Check if there's an active chat session.
+
         This would need to be implemented based on your chat state management.
         For now, we'll assume there's always a potential active chat.
         """
         return self._current_adapter is not None
     
-    def get_adapter_info(self) -> Dict[str, Any]:
+    def get_adapter_info(self) -> dict[str, Any]:
         """Get information about the current adapter including provider name."""
         def _get_info(db):
             provider_name = None

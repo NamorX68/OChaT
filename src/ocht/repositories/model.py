@@ -1,5 +1,6 @@
+"""CRUD operations for the Model entity."""
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Optional, Sequence
 
 from sqlmodel import Session, select
 
@@ -7,11 +8,10 @@ from ocht.core.models import Model
 
 
 def create_model(db: Session, model_name: str, model_provider_id: int,
-                 model_description: Optional[str] = None, model_version: Optional[str] = None,
-                 model_params: Optional[str] = None, is_available: bool = True,
-                 last_checked: Optional[datetime] = None) -> Model:
-    """
-    Creates a new model.
+                 model_description: str | None = None, model_version: str | None = None,
+                 model_params: str | None = None, is_available: bool = True,
+                 last_checked: datetime | None = None) -> Model:
+    """Creates a new model.
 
     Args:
         db (Session): The database session.
@@ -42,9 +42,8 @@ def create_model(db: Session, model_name: str, model_provider_id: int,
     return db_model
 
 
-def get_model_by_name(db: Session, model_name: str) -> Optional[Model]:
-    """
-    Fetches a model by its name.
+def get_model_by_name(db: Session, model_name: str) -> Model | None:
+    """Fetches a model by its name.
 
     Args:
         db (Session): The database session.
@@ -58,9 +57,8 @@ def get_model_by_name(db: Session, model_name: str) -> Optional[Model]:
     return result.one_or_none()
 
 
-def get_all_models(db: Session, limit: Optional[int] = None, offset: Optional[int] = 0) -> Sequence[Model]:
-    """
-    Retrieves all models with optional limitation and offset.
+def get_all_models(db: Session, limit: int | None = None, offset: int | None = 0) -> Sequence[Model]:
+    """Retrieves all models with optional limitation and offset.
 
     Args:
         db (Session): The database session.
@@ -82,12 +80,11 @@ def get_all_models(db: Session, limit: Optional[int] = None, offset: Optional[in
     return db.exec(statement).all()
 
 
-def update_model(db: Session, model_name: str, new_model_name: Optional[str] = None,
-                 model_provider_id: Optional[int] = None, model_description: Optional[str] = None,
-                 model_version: Optional[str] = None, model_params: Optional[str] = None,
-                 is_available: Optional[bool] = None, last_checked: Optional[datetime] = None) -> Optional[Model]:
-    """
-    Updates an existing model.
+def update_model(db: Session, model_name: str, new_model_name: str | None = None,
+                 model_provider_id: int | None = None, model_description: str | None = None,
+                 model_version: str | None = None, model_params: str | None = None,
+                 is_available: bool | None = None, last_checked: datetime | None = None) -> Model | None:
+    """Updates an existing model.
 
     Args:
         db (Session): The database session.
@@ -132,8 +129,7 @@ def update_model(db: Session, model_name: str, new_model_name: Optional[str] = N
 
 
 def delete_model(db: Session, model_name: str) -> bool:
-    """
-    Deletes a model by its name.
+    """Deletes a model by its name.
 
     Args:
         db (Session): The database session.
@@ -153,8 +149,7 @@ def delete_model(db: Session, model_name: str) -> bool:
 
 
 def get_models_by_provider(db: Session, provider_id: int) -> Sequence[Model]:
-    """
-    Retrieves all models for a specific provider.
+    """Retrieves all models for a specific provider.
 
     Args:
         db (Session): The database session.

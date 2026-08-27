@@ -70,9 +70,9 @@ Footer {
 }
 
 .user-bubble-content {
-    background: $primary;
+    background: $surface-lighten-1;
     color: $text;
-    border: solid $primary;
+    border: solid $border;
     padding: 1 2;
     margin: 0 0 1 0;
 }

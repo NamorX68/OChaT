@@ -1,7 +1,16 @@
-.venv/
+.venv
 .zed/
 .junie/
 .idea/
 .zed/
 __pycache__/
 .DS_Store
+build/
+dist/
+*.egg-info/
+*.db
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/

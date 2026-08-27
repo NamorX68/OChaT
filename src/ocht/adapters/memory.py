@@ -1,10 +1,10 @@
+"""Conversation memory strategies for managing LLM context windows."""
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Optional
 from dataclasses import dataclass
-from langchain.schema import BaseMessage, HumanMessage, AIMessage, SystemMessage
-from langchain.memory import ConversationSummaryMemory
-from langchain.schema.language_model import BaseLanguageModel
+
+from langchain_core.language_models import BaseLanguageModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 
 @dataclass
@@ -19,13 +19,17 @@ class MemoryConfig:
 class MemoryStrategy(ABC):
     """Abstract base class for memory management strategies."""
     
-    def __init__(self, config: Optional[MemoryConfig] = None):
+    def __init__(self, config: MemoryConfig | None = None):
+        """Initializes the strategy with the given configuration.
+
+        Args:
+            config: Memory configuration to use. Defaults to a new `MemoryConfig()` if not provided.
+        """
         self.config = config or MemoryConfig()
     
     @abstractmethod
-    async def prepare_context(self, messages: List[BaseMessage], new_prompt: str) -> List[Tuple[str, str]]:
-        """
-        Prepare conversation context for LLM call.
+    async def prepare_context(self, messages: list[BaseMessage], new_prompt: str) -> list[tuple[str, str]]:
+        """Prepare conversation context for LLM call.
         
         Args:
             messages: Historical messages from memory
@@ -37,9 +41,8 @@ class MemoryStrategy(ABC):
         pass
     
     @abstractmethod
-    async def should_summarize(self, messages: List[BaseMessage]) -> bool:
-        """
-        Determine if conversation should be summarized.
+    async def should_summarize(self, messages: list[BaseMessage]) -> bool:
+        """Determine if conversation should be summarized.
         
         Args:
             messages: Current message history
@@ -50,8 +53,7 @@ class MemoryStrategy(ABC):
         pass
     
     def _estimate_tokens(self, text: str) -> int:
-        """
-        Improved token estimation that accounts for different text patterns.
+        """Improved token estimation that accounts for different text patterns.
         
         Args:
             text: Text to estimate tokens for
@@ -79,8 +81,7 @@ class MemoryStrategy(ABC):
         return max(1, adjusted_tokens)
     
     def _contains_code(self, text: str) -> bool:
-        """
-        Detect if message contains code blocks or code-like content.
+        """Detect if message contains code blocks or code-like content.
         
         Args:
             text: Message content to analyze
@@ -104,8 +105,7 @@ class MemoryStrategy(ABC):
 
 
 class HybridMemoryStrategy(MemoryStrategy):
-    """
-    Hybrid memory strategy that combines recent message retention with smart summarization.
+    """Hybrid memory strategy that combines recent message retention with smart summarization.
     
     Features:
     - Keep last N messages completely for immediate context
@@ -114,23 +114,21 @@ class HybridMemoryStrategy(MemoryStrategy):
     - Token-aware context management
     """
     
-    def __init__(self, config: Optional[MemoryConfig] = None, llm: Optional[BaseLanguageModel] = None):
+    def __init__(self, config: MemoryConfig | None = None, llm: BaseLanguageModel | None = None):
+        """Initializes the strategy and, if an LLM is provided, enables LLM-based summarization.
+
+        Args:
+            config: Memory configuration to use. Defaults to a new `MemoryConfig()` if not provided.
+            llm: Optional language model used to generate conversation summaries. If omitted, a simple
+                heuristic summary is used instead.
+        """
         super().__init__(config)
-        self._summary_cache: Optional[str] = None
+        self._summary_cache: str | None = None
         self._last_summarized_count: int = 0
         self._llm = llm
-        self._summarizer: Optional[ConversationSummaryMemory] = None
-        
-        if llm:
-            self._summarizer = ConversationSummaryMemory(
-                llm=llm,
-                return_messages=False,  # We want string summaries
-                max_token_limit=self.config.max_context_tokens // 4  # Reserve 1/4 for summary
-            )
     
-    async def prepare_context(self, messages: List[BaseMessage], new_prompt: str) -> List[Tuple[str, str]]:
-        """
-        Prepare context using hybrid strategy.
+    async def prepare_context(self, messages: list[BaseMessage], new_prompt: str) -> list[tuple[str, str]]:
+        """Prepare context using hybrid strategy.
         
         Strategy:
         1. Always keep recent messages (last N)
@@ -174,49 +172,62 @@ class HybridMemoryStrategy(MemoryStrategy):
         
         return context_tuples
     
-    async def should_summarize(self, messages: List[BaseMessage]) -> bool:
+    async def should_summarize(self, messages: list[BaseMessage]) -> bool:
         """Check if summarization should occur based on message count and content."""
         return (
             len(messages) >= self.config.summarization_threshold and
             len(messages) > self._last_summarized_count + 5  # Re-summarize every 5 new messages
         )
     
-    async def _get_or_create_summary(self, messages: List[BaseMessage]) -> Optional[str]:
+    async def _get_or_create_summary(self, messages: list[BaseMessage]) -> str | None:
         """Get cached summary or create new one if needed."""
         if await self.should_summarize(messages):
-            if self._summarizer and self._llm:
-                # Use LangChain's summarization
+            if self._llm:
                 try:
-                    # Create a temporary conversation for summarization
-                    for msg in messages:
-                        if isinstance(msg, HumanMessage):
-                            self._summarizer.save_context({"input": msg.content}, {"output": ""})
-                        elif isinstance(msg, AIMessage):
-                            # Find the corresponding human message
-                            prev_human = next((m for m in reversed(messages[:messages.index(msg)]) 
-                                             if isinstance(m, HumanMessage)), None)
-                            if prev_human:
-                                self._summarizer.save_context(
-                                    {"input": prev_human.content}, 
-                                    {"output": msg.content}
-                                )
-                    
-                    # Get the summary
-                    summary_vars = self._summarizer.load_memory_variables({})
-                    self._summary_cache = summary_vars.get("history", "")
-                    
+                    self._summary_cache = await self._summarize_with_llm(messages)
                 except Exception:
-                    # Fallback to simple summary if LangChain summarization fails
+                    # Fallback to simple summary if LLM summarization fails
                     self._summary_cache = self._create_simple_summary(messages)
             else:
                 # Fallback to simple summary
                 self._summary_cache = self._create_simple_summary(messages)
-            
+
             self._last_summarized_count = len(messages)
-        
+
         return self._summary_cache
+
+    async def _summarize_with_llm(self, messages: list[BaseMessage]) -> str:
+        """Ask the configured LLM to summarize older conversation messages in a single call.
+
+        Replaces the previous ConversationSummaryMemory-based approach (deprecated in LangChain
+        0.3.1, removed from the `langchain` package in 1.0) with one direct call to the same LLM
+        client the adapter already talks to, over the full transcript at once - rather than one
+        incremental LLM call per message pair, which is what ConversationSummaryMemory did.
+
+        Args:
+            messages: Older messages to summarize.
+
+        Returns:
+            A concise text summary of the given messages.
+        """
+        role_labels = {HumanMessage: "Human", AIMessage: "AI", SystemMessage: "System"}
+        transcript = "\n".join(
+            f"{role_labels.get(type(msg), 'System')}: {msg.content}" for msg in messages
+        )
+        summary_prompt = [
+            SystemMessage(
+                content=(
+                    "Summarize the following conversation concisely, preserving key facts, "
+                    "decisions, and any code or technical details that were discussed. "
+                    "Respond with the summary only, no preamble."
+                )
+            ),
+            HumanMessage(content=transcript),
+        ]
+        response = await self._llm.ainvoke(summary_prompt)
+        return response.content
     
-    def _create_simple_summary(self, messages: List[BaseMessage]) -> str:
+    def _create_simple_summary(self, messages: list[BaseMessage]) -> str:
         """Create a simple summary of messages (placeholder for LangChain integration)."""
         topics = set()
         code_mentions = []
@@ -246,7 +257,7 @@ class HybridMemoryStrategy(MemoryStrategy):
         
         return ". ".join(summary_parts) if summary_parts else "General conversation"
     
-    def _select_important_messages(self, messages: List[BaseMessage]) -> List[BaseMessage]:
+    def _select_important_messages(self, messages: list[BaseMessage]) -> list[BaseMessage]:
         """Select important messages from older history (prioritize code-containing ones)."""
         scored_messages = []
         
@@ -272,7 +283,7 @@ class HybridMemoryStrategy(MemoryStrategy):
         
         return [msg for score, msg in scored_messages[:max_important] if score >= min_score]
     
-    async def _trim_to_token_limit(self, context_tuples: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    async def _trim_to_token_limit(self, context_tuples: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """Ensure context fits within token limit by removing older messages if needed."""
         total_tokens = sum(self._estimate_tokens(content) for _, content in context_tuples)
         
@@ -295,7 +306,7 @@ class HybridMemoryStrategy(MemoryStrategy):
         
         return trimmed
     
-    def _convert_message_to_tuple(self, msg: BaseMessage) -> Tuple[str, str]:
+    def _convert_message_to_tuple(self, msg: BaseMessage) -> tuple[str, str]:
         """Convert LangChain message to (role, content) tuple."""
         if isinstance(msg, HumanMessage):
             return ("human", msg.content)

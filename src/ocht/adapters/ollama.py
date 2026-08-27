@@ -1,10 +1,13 @@
-import asyncio
-from typing import Optional, Dict, Any, AsyncIterator, List, Tuple
-from langchain.memory import ConversationSummaryMemory
-from langchain.schema import HumanMessage, AIMessage, SystemMessage, BaseMessage
+"""LLM adapter for local Ollama models accessed through LangChain."""
+from collections.abc import AsyncIterator
+from typing import Any
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
+
 from ocht.adapters.base import LLMAdapter
 from ocht.adapters.memory import HybridMemoryStrategy, MemoryConfig
+
 
 class OllamaAdapter(LLMAdapter):
     """Adapter für lokale Ollama-Modelle über LangChain."""
@@ -13,104 +16,90 @@ class OllamaAdapter(LLMAdapter):
         self,
         model: str = "qwen3:30b-a3b",
         base_url: str = "http://localhost:11434",
-        default_params: Optional[Dict[str, Any]] = None,
-        memory=None,
-        use_hybrid_memory: bool = True,
-        memory_config: Optional[MemoryConfig] = None,
+        default_params: dict[str, Any] | None = None,
+        memory_config: MemoryConfig | None = None,
     ):
+        """Initializes the Ollama client and its conversation memory.
+
+        Args:
+            model: Name of the Ollama model to use.
+            base_url: URL of the Ollama server.
+            default_params: Optional default parameters passed to the `ChatOllama` client (e.g. temperature).
+            memory_config: Optional configuration for the hybrid memory strategy.
+        """
         self.client = ChatOllama(
             model=model,
             base_url=base_url,
             **(default_params or {})
         )
-
-        if use_hybrid_memory:
-            # Use new HybridMemoryStrategy
-            self.memory_strategy = HybridMemoryStrategy(
-                config=memory_config or MemoryConfig(),
-                llm=self.client
-            )
-            # Keep legacy memory for compatibility, but it won't be used
-            self.memory = ConversationSummaryMemory(
-                llm=self.client,
-                return_messages=True,
-                output_key="output"
-            )
-        else:
-            # Legacy memory system
-            self.memory_strategy = None
-            self.memory = memory or ConversationSummaryMemory(
-                llm=self.client,
-                return_messages=True,
-                output_key="output"
-            )
+        self.memory_strategy = HybridMemoryStrategy(
+            config=memory_config or MemoryConfig(),
+            llm=self.client
+        )
+        # Raw, in-memory conversation history for this session. HybridMemoryStrategy decides how
+        # much of it to send verbatim vs. summarize on each call - see prepare_context().
+        self._history: list[BaseMessage] = []
 
     async def send_prompt_async(self, prompt: str, **kwargs) -> str:
-        # Geschichte laden und konvertieren
-        if self.memory_strategy:
-            # Use HybridMemoryStrategy
-            memory_vars = self.memory.load_memory_variables({})
-            history_messages = memory_vars.get('history', [])
-            messages = await self.memory_strategy.prepare_context(history_messages, prompt)
-        else:
-            # Legacy method
-            messages = await self._prepare_messages(prompt)
-        
+        """Sends a prompt to the Ollama model and returns the full response.
+
+        Loads conversation history via the configured memory strategy, invokes the model, and stores the
+        exchange back into memory.
+
+        Args:
+            prompt: The user prompt to send.
+            **kwargs: Additional parameters forwarded to the underlying LangChain client call.
+
+        Returns:
+            The model's response text.
+        """
+        # Geschichte konvertieren
+        messages = await self.memory_strategy.prepare_context(self._history, prompt)
+
         # Convert tuples to message objects for LangChain
         message_objects = self._convert_tuples_to_messages(messages)
-        
+
         # LLM asynchron aufrufen
         response = await self.client.ainvoke(message_objects, **kwargs)
-        
+
         # Kontext speichern
-        await self._save_to_memory(prompt, response.content)
-        
+        self._history.append(HumanMessage(content=prompt))
+        self._history.append(AIMessage(content=response.content))
+
         return response.content
 
     async def send_prompt_stream(self, prompt: str, **kwargs) -> AsyncIterator[str]:
-        # Geschichte laden und konvertieren
-        if self.memory_strategy:
-            # Use HybridMemoryStrategy
-            memory_vars = self.memory.load_memory_variables({})
-            history_messages = memory_vars.get('history', [])
-            messages = await self.memory_strategy.prepare_context(history_messages, prompt)
-        else:
-            # Legacy method
-            messages = await self._prepare_messages(prompt)
-        
+        """Sends a prompt to the Ollama model and streams the response incrementally.
+
+        Loads conversation history via the configured memory strategy, streams the response chunk by chunk,
+        and stores the full accumulated response back into memory once streaming completes.
+
+        Args:
+            prompt: The user prompt to send.
+            **kwargs: Additional parameters forwarded to the underlying LangChain client call.
+
+        Yields:
+            Successive text chunks of the model's response.
+        """
+        # Geschichte konvertieren
+        messages = await self.memory_strategy.prepare_context(self._history, prompt)
+
         # Convert tuples to message objects for LangChain
         message_objects = self._convert_tuples_to_messages(messages)
-        
+
         # Streaming response
         full_response = ""
         async for chunk in self.client.astream(message_objects, **kwargs):
             if chunk.content:
                 full_response += chunk.content
                 yield chunk.content
-        
+
         # Nach dem Streaming den vollständigen Text speichern
         if full_response:
-            await self._save_to_memory(prompt, full_response)
+            self._history.append(HumanMessage(content=prompt))
+            self._history.append(AIMessage(content=full_response))
 
-    async def _prepare_messages(self, prompt: str) -> list[tuple[str, str]]:
-        """Bereitet die Nachrichten-Historie für den LLM-Call vor."""
-        # Memory operations könnten auch async sein - für jetzt sync
-        memory_vars = self.memory.load_memory_variables({})
-        history = memory_vars.get('history', [])
-        messages = [self._convert_message_to_tuple(msg) for msg in history]
-        messages.append(("human", prompt))
-        return messages
-
-    async def _save_to_memory(self, prompt: str, response: str):
-        """Speichert den Kontext ins Memory."""
-        # Memory operations könnten auch async sein - für jetzt sync
-        await asyncio.to_thread(
-            self.memory.save_context,
-            {"input": prompt},
-            {"output": response}
-        )
-
-    def _convert_tuples_to_messages(self, message_tuples: List[Tuple[str, str]]) -> List[BaseMessage]:
+    def _convert_tuples_to_messages(self, message_tuples: list[tuple[str, str]]) -> list[BaseMessage]:
         """Convert list of (role, content) tuples to LangChain message objects."""
         messages = []
         for role, content in message_tuples:

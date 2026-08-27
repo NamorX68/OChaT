@@ -1,14 +1,15 @@
-from textual.widgets import Static, DataTable, Button, Input, Label, Header, Footer
-from textual.containers import Vertical, Horizontal
-from textual.screen import Screen, ModalScreen
+"""TUI screens for creating, editing, and managing LLM provider configurations."""
 from textual.binding import Binding
-from typing import List, Optional
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
+
 from ocht.core.models import LLMProviderConfig
 from ocht.services.provider_manager import (
-    get_providers_with_info,
     create_provider_with_validation,
+    delete_provider_with_checks,
+    get_providers_with_info,
     update_provider_with_validation,
-    delete_provider_with_checks
 )
 
 
@@ -22,12 +23,19 @@ class ProviderEditScreen(ModalScreen):
         Binding("enter", "save", "Save"),
     ]
 
-    def __init__(self, provider: Optional[LLMProviderConfig] = None, **kwargs):
+    def __init__(self, provider: LLMProviderConfig | None = None, **kwargs):
+        """Initializes the screen in create mode, or edit mode if a provider is given.
+
+        Args:
+            provider: Existing provider to edit, or None to create a new provider.
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
+        """
         super().__init__(**kwargs)
         self.provider = provider
         self.is_edit_mode = provider is not None
 
     def compose(self):
+        """Build the modal form for creating or editing a provider."""
         title = "Edit Provider" if self.is_edit_mode else "Create New Provider"
         yield Vertical(
             Static(f"🔧 {title}", classes="modal-title"),
@@ -62,9 +70,20 @@ class ProviderEditScreen(ModalScreen):
             Horizontal(
                 Label("Default Model:", classes="form-label"),
                 Input(
-                    value=self.provider.prov_default_model if self.provider and self.provider.prov_default_model else "",
+                    value=(
+                        self.provider.prov_default_model if self.provider and self.provider.prov_default_model else ""
+                    ),
                     placeholder="Optional: Default model name",
                     id="provider-default-model"
+                ),
+                classes="form-row"
+            ),
+            Horizontal(
+                Label("Routing Params:", classes="form-label"),
+                Input(
+                    value=self.provider.prov_params if self.provider and self.provider.prov_params else "",
+                    placeholder='Optional JSON, e.g. {"quantizations": ["fp8"], "preferred_min_throughput": 40}',
+                    id="provider-params"
                 ),
                 classes="form-row"
             ),
@@ -77,6 +96,7 @@ class ProviderEditScreen(ModalScreen):
         )
 
     def on_button_pressed(self, event: Button.Pressed):
+        """Dispatch save/cancel button presses to their respective actions."""
         if event.button.id == "cancel-btn":
             self.action_cancel()
         elif event.button.id == "save-btn":
@@ -96,6 +116,10 @@ class ProviderEditScreen(ModalScreen):
         api_key = self.query_one("#provider-api-key", Input).value.strip()
         endpoint = self.query_one("#provider-endpoint", Input).value.strip() or None
         default_model = self.query_one("#provider-default-model", Input).value.strip() or None
+        # Not `or None` on purpose: the field always reflects the intended final value, and an
+        # explicit "" is how update_provider_with_validation() knows to clear an existing value
+        # rather than leaving it untouched (see its docstring).
+        params = self.query_one("#provider-params", Input).value.strip()
 
         if not name:
             self.notify("Provider name is required", severity="error")
@@ -113,7 +137,8 @@ class ProviderEditScreen(ModalScreen):
                     name=name,
                     api_key=api_key,
                     endpoint=endpoint,
-                    default_model=default_model
+                    default_model=default_model,
+                    params=params
                 )
                 if updated_provider:
                     self.dismiss(updated_provider)
@@ -125,7 +150,8 @@ class ProviderEditScreen(ModalScreen):
                     name,
                     api_key=api_key,
                     endpoint=endpoint,
-                    default_model=default_model
+                    default_model=default_model,
+                    params=params or None
                 )
                 self.dismiss(new_provider)
         except ValueError as e:
@@ -148,14 +174,22 @@ class ProviderManagerScreen(Screen):
     ]
 
     def __init__(self, **kwargs):
+        """Initializes the screen with an empty provider list.
+
+        Args:
+            **kwargs: Additional keyword arguments forwarded to `Screen`.
+        """
         super().__init__(**kwargs)
-        self.providers: List[LLMProviderConfig] = []
+        self.providers: list[LLMProviderConfig] = []
 
     def compose(self):
         """Compose the provider manager screen."""
         yield Header(show_clock=True)
         yield Vertical(
-            Static("Provider Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back", classes="help-text"),
+            Static(
+                "Provider Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back",
+                classes="help-text",
+            ),
             DataTable(id="provider-table"),
             Horizontal(
                 Button("➕ Add Provider", variant="primary", id="add-provider-btn"),

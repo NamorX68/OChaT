@@ -1,5 +1,7 @@
+"""Service for launching the interactive chat TUI."""
 from ocht.core.db import init_db
 from ocht.tui.app import ChatApp
+
 
 def start_chat():
     """Starts the text UI for the chat."""

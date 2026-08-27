@@ -1,1 +1,1 @@
-# Business logic for prompt templates
+"""Business logic for prompt templates."""

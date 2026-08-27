@@ -1,14 +1,15 @@
-from textual.widgets import Static, DataTable, Button, Input, Label, Header, Footer, Select
-from textual.containers import Vertical, Horizontal
-from textual.screen import Screen, ModalScreen
+"""TUI screens for creating, editing, and managing LLM models."""
 from textual.binding import Binding
-from typing import List, Optional
-from ocht.core.models import Model, LLMProviderConfig
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select, Static
+
+from ocht.core.models import LLMProviderConfig, Model
 from ocht.services.model_manager import (
-    get_models_with_provider_info,
     create_model_with_validation,
+    delete_model_with_checks,
+    get_models_with_provider_info,
     update_model_with_validation,
-    delete_model_with_checks
 )
 from ocht.services.provider_manager import get_available_providers
 
@@ -23,23 +24,32 @@ class ModelEditScreen(ModalScreen):
         Binding("enter", "save", "Save"),
     ]
 
-    def __init__(self, model: Optional[Model] = None, **kwargs):
+    def __init__(self, model: Model | None = None, **kwargs):
+        """Initializes the screen in create mode, or edit mode if a model is given.
+
+        Args:
+            model: Existing model to edit, or None to create a new model.
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
+        """
         super().__init__(**kwargs)
         self.model = model
         self.is_edit_mode = model is not None
-        self.providers: List[LLMProviderConfig] = []
+        self.providers: list[LLMProviderConfig] = []
 
     def compose(self):
+        """Build the modal form for creating or editing a model."""
         title = "Edit Model" if self.is_edit_mode else "Create New Model"
 
         # Load available providers for model assignment
         try:
             self.providers = get_available_providers()
-        except Exception as e:
+        except Exception:
             self.providers = []
 
         # Create provider selection options for model assignment
-        provider_options = [(f"{provider.prov_name} (ID: {provider.prov_id})", provider.prov_id) for provider in self.providers]
+        provider_options = [
+            (f"{provider.prov_name} (ID: {provider.prov_id})", provider.prov_id) for provider in self.providers
+        ]
 
         yield Vertical(
             Static(f"🤖 {title}", classes="modal-title"),
@@ -56,7 +66,11 @@ class ModelEditScreen(ModalScreen):
                 Label("Model Provider:", classes="form-label"),
                 Select(
                     options=provider_options,
-                    value=self.model.model_provider_id if self.model else (provider_options[0][1] if provider_options else None),
+                    value=(
+                        self.model.model_provider_id
+                        if self.model
+                        else (provider_options[0][1] if provider_options else None)
+                    ),
                     id="model-provider"
                 ),
                 classes="form-row"
@@ -97,6 +111,7 @@ class ModelEditScreen(ModalScreen):
         )
 
     def on_button_pressed(self, event: Button.Pressed):
+        """Dispatch save/cancel button presses to their respective actions."""
         if event.button.id == "cancel-btn":
             self.action_cancel()
         elif event.button.id == "save-btn":
@@ -171,15 +186,23 @@ class ModelManagerScreen(Screen):
     ]
 
     def __init__(self, **kwargs):
+        """Initializes the screen with empty model and provider lists.
+
+        Args:
+            **kwargs: Additional keyword arguments forwarded to `Screen`.
+        """
         super().__init__(**kwargs)
-        self.models: List[Model] = []
-        self.providers: List[LLMProviderConfig] = []
+        self.models: list[Model] = []
+        self.providers: list[LLMProviderConfig] = []
 
     def compose(self):
         """Compose the model manager screen."""
         yield Header(show_clock=True)
         yield Vertical(
-            Static("Model Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back", classes="help-text"),
+            Static(
+                "Model Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back",
+                classes="help-text",
+            ),
             DataTable(id="model-table"),
             Horizontal(
                 Button("➕ Add Model", variant="primary", id="add-model-btn"),

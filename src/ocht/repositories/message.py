@@ -1,27 +1,28 @@
-# message.py
+"""CRUD operations for the Message entity."""
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Optional, Sequence
 
 from sqlmodel import Session, select
 
 from ocht.core.models import Message
 
 
-def create_message(db: Session, content: str, workspace_id: int) -> Message:
-    """
-    Creates a new message.
+def create_message(db: Session, workspace_id: int, role: str, content: str) -> Message:
+    """Creates a new message.
 
     Args:
         db (Session): The database session.
-        content (str): The content of the message.
         workspace_id (int): The ID of the workspace to which the message belongs.
+        role (str): Role of the message (e.g., 'user', 'assistant', 'system').
+        content (str): The content of the message.
 
     Returns:
         Message: Das erstellte Nachrichten-Objekt.
     """
     message = Message(
-        msg_content=content,
         msg_workspace_id=workspace_id,
+        msg_role=role,
+        msg_content=content,
         msg_created_at=datetime.now(),
         msg_updated_at=datetime.now()
     )
@@ -32,8 +33,7 @@ def create_message(db: Session, content: str, workspace_id: int) -> Message:
 
 
 def get_message_by_id(db: Session, message_id: int) -> Message:
-    """
-    Holt eine Nachricht nach ihrer ID.
+    """Holt eine Nachricht nach ihrer ID.
 
     Args:
         db (Session): Die Datenbanksitzung.
@@ -47,9 +47,10 @@ def get_message_by_id(db: Session, message_id: int) -> Message:
     return result.one_or_none()
 
 
-def get_messages_by_workspace(db: Session, workspace_id: int, limit: Optional[int] = None, offset: Optional[int] = 0) -> Sequence[Message]:
-    """
-    Retrieves all messages for a specific workspace with optional limitation and offset.
+def get_messages_by_workspace(
+    db: Session, workspace_id: int, limit: int | None = None, offset: int | None = 0
+) -> Sequence[Message]:
+    """Retrieves all messages for a specific workspace with optional limitation and offset.
     
     Args:
         db (Session): The database session.
@@ -78,9 +79,8 @@ def get_messages_by_workspace(db: Session, workspace_id: int, limit: Optional[in
     return messages
 
 
-def update_message(db: Session, message_id: int, content: str = None) -> Optional[Message]:
-    """
-    Updates an existing message.
+def update_message(db: Session, message_id: int, content: str = None) -> Message | None:
+    """Updates an existing message.
 
     Args:
         db (Session): The database session.
@@ -106,8 +106,7 @@ def update_message(db: Session, message_id: int, content: str = None) -> Optiona
 
 
 def delete_message(db: Session, message_id: int) -> bool:
-    """
-    Deletes a message.
+    """Deletes a message.
 
     Args:
         db (Session): The database session.

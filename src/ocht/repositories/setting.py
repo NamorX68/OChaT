@@ -1,5 +1,5 @@
-# CRUD functions for Setting
-from typing import Optional, Sequence
+"""CRUD functions for Setting."""
+from collections.abc import Sequence
 
 from sqlmodel import Session, select
 
@@ -7,8 +7,7 @@ from ocht.core.models import Setting
 
 
 def create_setting(db: Session, key: str, value: str) -> Setting:
-    """
-    Creates a new setting.
+    """Creates a new setting.
 
     Args:
         db (Session): The database session.
@@ -26,9 +25,8 @@ def create_setting(db: Session, key: str, value: str) -> Setting:
     return db_setting
 
 
-def get_setting_by_key(db: Session, key: str) -> Optional[Setting]:
-    """
-    Retrieves a setting by its key.
+def get_setting_by_key(db: Session, key: str) -> Setting | None:
+    """Retrieves a setting by its key.
 
     Args:
         db (Session): The database session.
@@ -42,9 +40,8 @@ def get_setting_by_key(db: Session, key: str) -> Optional[Setting]:
     return result.one_or_none()
 
 
-def get_all_settings(db: Session, limit: Optional[int] = None, offset: int = 0) -> Sequence[Setting]:
-    """
-    Retrieves all settings with optional limitation and offset.
+def get_all_settings(db: Session, limit: int | None = None, offset: int = 0) -> Sequence[Setting]:
+    """Retrieves all settings with optional limitation and offset.
 
     Args:
         db (Session): The database session.
@@ -67,9 +64,10 @@ def get_all_settings(db: Session, limit: Optional[int] = None, offset: int = 0) 
     return settings
 
 
-def update_setting(db: Session, setting_key: str, new_key: Optional[str] = None, value: Optional[str] = None) -> Optional[Setting]:
-    """
-    Updates an existing setting.
+def update_setting(
+    db: Session, setting_key: str, new_key: str | None = None, value: str | None = None
+) -> Setting | None:
+    """Updates an existing setting.
 
     Args:
         db (Session): The database session.
@@ -104,8 +102,7 @@ def update_setting(db: Session, setting_key: str, new_key: Optional[str] = None,
 
 
 def delete_setting(db: Session, setting_key: str) -> bool:
-    """
-    Deletes a setting.
+    """Deletes a setting.
 
     Args:
         db (Session): The database session.

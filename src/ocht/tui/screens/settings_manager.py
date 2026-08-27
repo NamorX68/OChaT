@@ -1,14 +1,15 @@
-from textual.widgets import Static, DataTable, Button, Input, Label, Header, Footer
-from textual.containers import Vertical, Horizontal
-from textual.screen import Screen, ModalScreen
+"""TUI screens for creating, editing, and managing application settings."""
 from textual.binding import Binding
-from typing import List, Optional
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
+
 from ocht.core.models import Setting
 from ocht.services.settings_manager import (
-    get_all_settings_with_info,
     create_setting_with_validation,
+    delete_setting_with_checks,
+    get_all_settings_with_info,
     update_setting_with_validation,
-    delete_setting_with_checks
 )
 
 
@@ -22,12 +23,19 @@ class SettingEditScreen(ModalScreen):
         Binding("enter", "save", "Save"),
     ]
 
-    def __init__(self, setting: Optional[Setting] = None, **kwargs):
+    def __init__(self, setting: Setting | None = None, **kwargs):
+        """Initializes the screen in create mode, or edit mode if a setting is given.
+
+        Args:
+            setting: Existing setting to edit, or None to create a new setting.
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
+        """
         super().__init__(**kwargs)
         self.setting = setting
         self.is_edit_mode = setting is not None
 
     def compose(self):
+        """Build the modal form for creating or editing a setting."""
         title = "Edit Setting" if self.is_edit_mode else "Create New Setting"
         yield Vertical(
             Static(f"⚙️ {title}", classes="modal-title"),
@@ -59,6 +67,7 @@ class SettingEditScreen(ModalScreen):
         )
 
     def on_button_pressed(self, event: Button.Pressed):
+        """Dispatch save/cancel button presses to their respective actions."""
         if event.button.id == "cancel-btn":
             self.action_cancel()
         elif event.button.id == "save-btn":
@@ -120,14 +129,22 @@ class SettingsManagerScreen(Screen):
     ]
 
     def __init__(self, **kwargs):
+        """Initializes the screen with an empty settings list.
+
+        Args:
+            **kwargs: Additional keyword arguments forwarded to `Screen`.
+        """
         super().__init__(**kwargs)
-        self.settings: List[Setting] = []
+        self.settings: list[Setting] = []
 
     def compose(self):
         """Compose the settings manager screen."""
         yield Header(show_clock=True)
         yield Vertical(
-            Static("Settings Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back", classes="help-text"),
+            Static(
+                "Settings Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back",
+                classes="help-text",
+            ),
             DataTable(id="settings-table"),
             Horizontal(
                 Button("➕ Add Setting", variant="primary", id="add-setting-btn"),

@@ -1,15 +1,14 @@
-# CRUD functions for PromptTemplate
+"""CRUD functions for PromptTemplate."""
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Optional, Sequence
 
 from sqlmodel import Session, select
 
 from ocht.core.models import PromptTemplate
 
 
-def create_prompt_template(db: Session, name: str, text: str, description: Optional[str] = None) -> PromptTemplate:
-    """
-    Creates a new prompt template.
+def create_prompt_template(db: Session, name: str, text: str, description: str | None = None) -> PromptTemplate:
+    """Creates a new prompt template.
 
     Args:
         db (Session): The database session.
@@ -33,9 +32,8 @@ def create_prompt_template(db: Session, name: str, text: str, description: Optio
     return prompt_template
 
 
-def get_prompt_template_by_id(db: Session, template_id: int) -> Optional[PromptTemplate]:
-    """
-    Retrieves a prompt template by its ID.
+def get_prompt_template_by_id(db: Session, template_id: int) -> PromptTemplate | None:
+    """Retrieves a prompt template by its ID.
 
     Args:
         db (Session): The database session.
@@ -49,9 +47,8 @@ def get_prompt_template_by_id(db: Session, template_id: int) -> Optional[PromptT
     return result.first()
 
 
-def get_all_prompt_templates(db: Session, limit: Optional[int] = None, offset: int = 0) -> Sequence[PromptTemplate]:
-    """
-    Retrieves all prompt templates with optional limitation and offset.
+def get_all_prompt_templates(db: Session, limit: int | None = None, offset: int = 0) -> Sequence[PromptTemplate]:
+    """Retrieves all prompt templates with optional limitation and offset.
 
     Args:
         db (Session): The database session.
@@ -73,10 +70,9 @@ def get_all_prompt_templates(db: Session, limit: Optional[int] = None, offset: i
     return db.exec(statement).all()
 
 
-def update_prompt_template(db: Session, template_id: int, name: Optional[str] = None, description: Optional[str] = None,
-                           text: Optional[str] = None) -> Optional[PromptTemplate]:
-    """
-    Updates an existing prompt template.
+def update_prompt_template(db: Session, template_id: int, name: str | None = None, description: str | None = None,
+                           text: str | None = None) -> PromptTemplate | None:
+    """Updates an existing prompt template.
 
     Args:
         db (Session): The database session.
@@ -107,8 +103,7 @@ def update_prompt_template(db: Session, template_id: int, name: Optional[str] = 
 
 
 def delete_prompt_template(db: Session, template_id: int) -> bool:
-    """
-    Deletes a prompt template.
+    """Deletes a prompt template.
 
     Args:
         db (Session): The database session.

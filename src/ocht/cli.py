@@ -1,10 +1,12 @@
+"""Command-line interface entry points for the OChaT TUI application."""
 import click
-from ocht.services.workspace import create_workspace
-from ocht.services.chat import start_chat
-from ocht.services.config import open_conf, export_conf, import_conf
-from ocht.services.model_manager import list_llm_models, sync_llm_models
+
 from ocht.core.migration import migrate_to
 from ocht.core.version import get_version
+from ocht.services.chat import start_chat
+from ocht.services.config import export_conf, import_conf, open_conf
+from ocht.services.model_manager import list_llm_models, sync_llm_models
+from ocht.services.workspace import create_workspace
 
 
 @click.group(invoke_without_command=True)
@@ -55,7 +57,11 @@ def list_models():
 
 
 @cli.command()
-@click.option('--delete-missing', is_flag=True, help='Delete models from database that are no longer available in providers')
+@click.option(
+    '--delete-missing',
+    is_flag=True,
+    help='Delete models from database that are no longer available in providers',
+)
 def sync_models(delete_missing):
     """Synchronizes model metadata from external providers into the database."""
     sync_llm_models(delete_missing=delete_missing)
@@ -83,7 +89,8 @@ def help(command):
         click.echo(f"Help for {command}")
     else:
         click.echo(
-            "Available commands: init, chat, config, list-models, sync-models, export-config, import-config, migrate, version"
+            "Available commands: init, chat, config, list-models, sync-models, "
+            "export-config, import-config, migrate, version"
         )
 
 

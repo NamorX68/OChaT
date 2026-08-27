@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/OChaT.iml" filepath="$PROJECT_DIR$/.idea/OChaT.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/ocht.iml" filepath="$PROJECT_DIR$/.idea/ocht.iml" />
     </modules>
   </component>
 </project>

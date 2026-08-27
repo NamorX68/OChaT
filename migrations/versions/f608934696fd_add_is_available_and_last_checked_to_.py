@@ -1,21 +1,20 @@
-"""Add is_available and last_checked to Model
+"""Add is_available and last_checked to Model.
 
 Revision ID: f608934696fd
 Revises: 131383e4170c
 Create Date: 2025-07-27 21:58:32.460393
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'f608934696fd'
-down_revision: Union[str, None] = '131383e4170c'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '131383e4170c'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

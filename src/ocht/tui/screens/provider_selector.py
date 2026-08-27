@@ -1,8 +1,9 @@
-from textual.widgets import Static, ListItem, ListView, Button
-from textual.containers import Vertical, Horizontal
-from textual.screen import ModalScreen
+"""TUI modal for selecting an LLM provider configuration."""
 from textual.binding import Binding
-from typing import List, Optional
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Button, ListItem, ListView, Static
+
 from ocht.core.models import LLMProviderConfig
 from ocht.services.provider_manager import get_available_providers
 
@@ -18,9 +19,14 @@ class ProviderSelectorModal(ModalScreen):
     ]
 
     def __init__(self, **kwargs):
+        """Initializes the modal with an empty provider list and no selection.
+
+        Args:
+            **kwargs: Additional keyword arguments forwarded to `ModalScreen`.
+        """
         super().__init__(**kwargs)
-        self.providers: List[LLMProviderConfig] = []
-        self.selected_provider: Optional[LLMProviderConfig] = None
+        self.providers: list[LLMProviderConfig] = []
+        self.selected_provider: LLMProviderConfig | None = None
 
     def compose(self):
         """Compose the provider selector modal."""
@@ -57,7 +63,7 @@ class ProviderSelectorModal(ModalScreen):
                 provider_list.append(ListItem(Static("No providers found. Use provider management to add providers.")))
                 return
 
-            for i, provider in enumerate(self.providers):
+            for provider in self.providers:
                 item_text = f"🔧 {provider.prov_name}"
                 if provider.prov_default_model:
                     item_text += f" (Default: {provider.prov_default_model})"

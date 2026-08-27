@@ -1,7 +1,8 @@
+"""Database engine and session management for the SQLModel/SQLAlchemy layer."""
 import os
-from pathlib import Path
-from typing import Generator
+from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
@@ -11,8 +12,8 @@ DEFAULT_DB_PATH = "src/ocht/data/ocht.db"
 
 
 def get_database_url() -> str:
-    """
-    Returns the database URL.
+    """Returns the database URL.
+
     First checks the DATABASE_URL environment variable.
     If not available, uses the default path.
     """
@@ -44,8 +45,7 @@ def get_database_url() -> str:
 
 
 def create_db_engine() -> Engine:
-    """
-    Creates and configures the database engine.
+    """Creates and configures the database engine.
     
     Returns:
         A SQLAlchemy engine instance configured for SQLite.
@@ -59,8 +59,7 @@ def create_db_engine() -> Engine:
 
 
 def init_db(engine: Engine = None) -> None:
-    """
-    Initializes the database by creating all tables.
+    """Initializes the database by creating all tables.
     
     Args:
         engine: Optional, the engine to use.
@@ -73,10 +72,10 @@ def init_db(engine: Engine = None) -> None:
 
 @contextmanager
 def get_session(engine: Engine = None) -> Generator[Session, None, None]:
-    """
-    Creates a new database session.
+    """Creates a new database session.
+
     Recommended to use as a context manager.
-    
+
     Args:
         engine: Optional, the engine to use.
                If not provided, create_db_engine() will be called.
