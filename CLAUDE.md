@@ -213,17 +213,26 @@ Workspaces are self-contained chat environments with their own configuration and
 ## Adapter Roadmap & Next Steps
 
 ### Phase 1: Memory System Improvements (High Priority)
-- [ ] Implement HybridMemoryStrategy
-  - Keep last 8-10 messages completely (for code context)
-  - Smart summarization for older messages
-  - Code blocks retained longer than natural text
-  - Function names/references separate indexing
-  - Token-aware context management
+- [x] Implement HybridMemoryStrategy
+  - [x] Keep last 8-10 messages completely (for code context) - `MemoryConfig.recent_messages_count`
+  - [x] Smart summarization for older messages - `HybridMemoryStrategy._summarize_with_llm()`; only
+    actually reachable in production since the LangChain 1.x migration fixed a wiring bug where
+    adapters fed it a single pre-summarized message instead of real history (see "Dependency
+    Upgrades" above) - before that, this logic was dead code despite the class existing
+  - [x] Code blocks retained longer than natural text - `_select_important_messages()`
+  - [ ] Function names/references separate indexing - not implemented as a real index; only a
+    minor regex extraction inside the heuristic fallback summary (`_create_simple_summary()`)
+  - [x] Token-aware context management - `_trim_to_token_limit()`
 
 ### Phase 2: Configuration & Health Monitoring (Medium Priority)
 - [ ] Provider-agnostic AdapterConfig class
-  - temperature, max_tokens, context_window
-  - streaming_enabled, memory_strategy
+  - temperature, max_tokens, context_window, streaming_enabled: still hardcoded per adapter
+    (`{"temperature": 0.5}` for Ollama, `0.7` for OpenAI-compatible) - not yet a generic,
+    provider-agnostic config object
+  - memory_strategy: partially - `MemoryConfig` exists and is passed through, but only
+    `HybridMemoryStrategy` exists as a concrete strategy (see Phase 4)
+  - `LLMProviderConfig.prov_params` (see "Provider Routing Preferences" above) covers one related
+    but narrower case: OpenRouter-specific provider-routing prefs, not general model parameters
 - [ ] Health check system
   - Model availability testing
   - Response time monitoring
@@ -231,10 +240,13 @@ Workspaces are self-contained chat environments with their own configuration and
 - [ ] Error recovery & retry logic
   - Exponential backoff
   - Circuit breaker pattern
-  - Graceful degradation (stream → async → error)
+  - Graceful degradation (stream → async → error): partially - `_process_prompt` falls back from
+    streaming to `_process_prompt_fallback()` (async) when the error message contains "stream",
+    but there's no backoff/circuit-breaker layer around either path
 
 ### Phase 3: New Adapters (Medium Priority)
-- [ ] OpenAI-compatible adapter (OpenAI, Groq, local APIs)
+- [x] OpenAI-compatible adapter (OpenAI, Groq, local APIs) - `OpenAICompatibleAdapter`; also now
+  covers OpenRouter (see "Provider Routing Preferences" above)
 - [ ] MLX-LM adapter (Apple Silicon local models)
 - [ ] Anthropic Claude adapter (API)
 
@@ -242,11 +254,15 @@ Workspaces are self-contained chat environments with their own configuration and
 - [ ] Context-aware parameter adjustment
 - [ ] Multi-model conversation support
 - [ ] Adapter performance metrics
-- [ ] Custom memory strategies per use case
+- [ ] Custom memory strategies per use case - only `HybridMemoryStrategy` exists; `MemoryStrategy`
+  is an ABC so this is architecturally possible, just nothing else implements it yet
 
-### Current Status (2025-07-29)
+### Current Status (2026-08-28)
 ✅ Base LLMAdapter with async/sync/stream methods
-✅ Enhanced OllamaAdapter with streaming support
+✅ OllamaAdapter and OpenAICompatibleAdapter (OpenAI/LM Studio/OpenRouter) with streaming support
 ✅ TUI streaming implementation with live updates
 ✅ Mouse escape sequence filtering
-🟡 Memory system needs improvement (current: basic ConversationSummaryMemory)
+✅ HybridMemoryStrategy actually active in production (see Phase 1)
+🟡 Next most natural steps, given what's already touched: a provider-agnostic AdapterConfig
+   (Phase 2) to stop hardcoding temperature/max_tokens per adapter, and/or an Anthropic adapter
+   (Phase 3) as the next OpenAI-compatible-pattern addition
