@@ -1,9 +1,9 @@
 """Retry-with-backoff and circuit-breaker resilience layer wrapping adapter client calls.
 
-Wraps the raw LangChain chat-model calls (`ChatOllama`/`ChatOpenAI` via `.ainvoke()`/`.astream()`)
-so a transient network hiccup is retried with exponential backoff before it ever becomes an
-exception the TUI has to handle, and so a provider that keeps failing stops being hammered
-(circuit breaker) rather than retried forever. This is deliberately separate from
+Wraps the raw LangChain chat-model calls (`ChatOllama`/`ChatOpenAI`/`ChatAnthropic` via
+`.ainvoke()`/`.astream()`) so a transient network hiccup is retried with exponential backoff
+before it ever becomes an exception the TUI has to handle, and so a provider that keeps failing
+stops being hammered (circuit breaker) rather than retried forever. This is deliberately separate from
 `tui/app.py`'s existing stream-to-async fallback: that is a *degradation strategy* (switch which
 API shape is used), this is a *resilience strategy* (retry the same shape) - the two compose
 rather than compete, since a stream that fails after retries here still falls through to the
@@ -16,6 +16,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
+import anthropic
 import httpx
 import ollama
 import openai
@@ -30,6 +31,18 @@ _NON_RETRYABLE_OPENAI_TYPES = (
     openai.BadRequestError,
     openai.ConflictError,
     openai.UnprocessableEntityError,
+)
+
+# Same non-retryable reasoning as _NON_RETRYABLE_OPENAI_TYPES above, but for the `anthropic` SDK's
+# own exception hierarchy (used by AnthropicAdapter) - structurally similar to openai's, but a
+# distinct set of classes, so it can't just reuse the OpenAI tuple/isinstance checks.
+_NON_RETRYABLE_ANTHROPIC_TYPES = (
+    anthropic.AuthenticationError,
+    anthropic.NotFoundError,
+    anthropic.PermissionDeniedError,
+    anthropic.BadRequestError,
+    anthropic.ConflictError,
+    anthropic.UnprocessableEntityError,
 )
 
 
@@ -129,6 +142,9 @@ def is_retryable(exc: BaseException) -> bool:
     Non-retryable: authentication/permission/not-found/bad-request errors - these reflect a
     configuration problem that will not resolve itself on retry. Unknown exception types are
     treated as non-retryable too, so a real bug isn't silently masked as "just try again".
+    Classifies both `openai`- and `anthropic`-SDK exception hierarchies (structurally similar, but
+    distinct classes - `ChatOpenAI`/`OpenAICompatibleAdapter` raise the former, `ChatAnthropic`/
+    `AnthropicAdapter` the latter), plus `ollama.ResponseError` and generic `httpx.TransportError`.
 
     Args:
         exc: The exception raised by an adapter's underlying LangChain client call.
@@ -148,6 +164,14 @@ def is_retryable(exc: BaseException) -> bool:
         # status_code defaults to -1 when Ollama's own error response didn't carry one - treat
         # that as unknown-but-worth-retrying rather than assuming it's a permanent 4xx.
         return exc.status_code >= 500 or exc.status_code == -1
+    if isinstance(exc, anthropic.RateLimitError):
+        return True
+    if isinstance(exc, _NON_RETRYABLE_ANTHROPIC_TYPES):
+        return False
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code >= 500
+    if isinstance(exc, (anthropic.APIConnectionError, anthropic.APITimeoutError)):
+        return True
     if isinstance(exc, httpx.TransportError):
         return True
     return False
@@ -165,7 +189,8 @@ def compute_delay(attempt: int, policy: RetryPolicy, exc: BaseException) -> floa
     Returns:
         The number of seconds to wait before the next attempt.
     """
-    base = policy.rate_limit_base_delay_seconds if isinstance(exc, openai.RateLimitError) else policy.base_delay_seconds
+    is_rate_limit = isinstance(exc, (openai.RateLimitError, anthropic.RateLimitError))
+    base = policy.rate_limit_base_delay_seconds if is_rate_limit else policy.base_delay_seconds
     delay = min(base * (policy.multiplier ** (attempt - 1)), policy.max_delay_seconds)
     return delay + random.uniform(0, policy.jitter_seconds)
 

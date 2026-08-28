@@ -268,6 +268,99 @@ from two places rather than guessed:
   `pyproject.toml` dependencies, since `resilience.py` imports them directly for exception
   classification (`uv audit` clean at these versions).
 
+### Anthropic Adapter (`adapters/anthropic.py`)
+
+- `AnthropicAdapter` follows the exact `OpenAICompatibleAdapter` template: same constructor shape
+  (`model`, `api_key`, `base_url`, `default_params`, `memory_config`, `retry_policy`), same
+  `send_prompt_async`/`send_prompt_stream` bodies routed through `_resilient_ainvoke`/
+  `_resilient_astream`, same `self.client`/`self.memory_strategy`/`self._history` attributes.
+- Wired in `build_adapter()` (`services/adapter_manager.py`) as its own top-level branch
+  (`prov_name == "anthropic"`, case-insensitive) rather than folded into the OpenAI-compatible
+  branch, since `ChatAnthropic` is a distinct LangChain client class (Anthropic's Messages API,
+  not the OpenAI chat-completions shape) even though the adapter code around it looks nearly
+  identical.
+- `prov_api_key` is always passed through explicitly from the DB row - `ChatAnthropic`'s own
+  `ANTHROPIC_API_KEY` env-var auto-detection is never consulted, same precedent as every other
+  adapter (no adapter here ever relies on ambient provider SDK env vars).
+- `ChatAnthropic`'s own `max_retries` client-level retry knob (default `2`) is set to `0` in the
+  adapter's constructor - retries are owned exclusively by `adapters/resilience.py`'s
+  `RetryPolicy`/`CircuitBreaker`, so a transient failure isn't silently retried twice (once inside
+  the `anthropic` SDK, once by this project's own resilience layer) with no visibility/consistent
+  backoff for the second layer. Applied *after* `default_params` is merged into the constructor's
+  `client_kwargs` dict (an architecture review caught this: an earlier version applied it before
+  the merge, so a `max_retries` key inside a model's free-form `model_params` JSON could silently
+  win and re-enable client-level retries - `tests/anthropic_adapter_tests.py`'s
+  `test_default_params_cannot_override_max_retries` locks in the fix).
+- `adapters/resilience.py`'s `is_retryable()`/`compute_delay()` were extended with an
+  `anthropic.*`-specific branch (`RateLimitError`/`APIConnectionError`/`APITimeoutError`
+  retryable, `AuthenticationError`/`NotFoundError`/`PermissionDeniedError`/`BadRequestError`/
+  `ConflictError`/`UnprocessableEntityError` not) - the `anthropic` SDK's exception hierarchy is
+  structurally similar to `openai`'s but is a distinct set of classes, so this could not simply
+  reuse the existing OpenAI branch. Verified live against the installed `anthropic==0.125.0`.
+- No OpenRouter-style `extra_body`/provider-routing concept exists for Anthropic, so
+  `_build_anthropic_params()` (`services/adapter_manager.py`) does not read `prov_params` at all -
+  only `Model.model_params` (via the existing `_merge_model_params()`) is available for per-model
+  Anthropic tuning (`temperature`, `max_tokens`, `top_p`, `top_k`). No `max_tokens` default is
+  hardcoded either - `langchain-anthropic` (confirmed against the installed `1.7.0`) already
+  defaults it to a large, sensible value when unset.
+- No auto-sync (`_sync_anthropic_models`) - follows the existing OpenAI/OpenRouter manual-entry
+  precedent for cloud APIs (only self-hosted providers get `sync_llm_models()` auto-sync).
+- Health check (`services/health_check.py`) needed zero changes: `usage_metadata`'s
+  `input_tokens`/`output_tokens` shape is identical to every other provider's, and Anthropic's
+  `response_metadata` carries no timing field analogous to Ollama's `eval_duration` - so
+  `_tokens_per_second()` always takes its existing wall-clock-fallback branch for Anthropic, the
+  same branch already used for OpenAI-compatible responses.
+- Third adapter to duplicate `_convert_tuples_to_messages()` motivated finally extracting it into
+  `LLMAdapter` (`adapters/base.py`) as a shared concrete method - `ollama.py`/`openai_compatible.py`
+  had it as byte-for-byte identical private copies before this.
+- **Known limitation, flagged by architecture review**: `ChatAnthropic` raises a `ValueError` if
+  the message list passed to it contains more than one *non-consecutive* `SystemMessage` -
+  a constraint `ChatOllama`/`ChatOpenAI` don't have. Today this is safe only because
+  `HybridMemoryStrategy.prepare_context()` never emits more than one `"system"`-role tuple per
+  call (the "Previous conversation summary" line) - documented on
+  `LLMAdapter._convert_tuples_to_messages()`, but not enforced anywhere. If `prepare_context()` is
+  ever extended to emit a second system-tagged tuple, it must be verified against a real
+  (unmocked) `AnthropicAdapter` call - the existing tests mock `ChatAnthropic` entirely and would
+  not catch this.
+- **Tracked technical debt, not addressed here**: `adapters/resilience.py`'s `is_retryable()`/
+  `compute_delay()` now repeat a near-identical four-branch pattern per SDK (OpenAI, Anthropic,
+  plus Ollama's own shape) - an Open/Closed violation that will keep growing linearly with each
+  new adapter's SDK. Worth refactoring into a small data-driven table (one `SdkExceptionProfile`
+  per SDK, looped over once) before a fourth adapter's exception hierarchy is added - deferred
+  here since it's a pure refactor with no behavior change, not blocking this feature.
+
+### MLX-LM: Provider Recognition, Not a Native Adapter
+
+- MLX-LM support does **not** get its own adapter class. `mlx_lm.server` (Apple's own `mlx-lm`
+  PyPI package, actively maintained by the ml-explore org) ships a local, OpenAI-compatible HTTP
+  server (`/v1/chat/completions` with real SSE streaming, `/v1/models`) - exactly the same shape
+  LM Studio and OpenRouter already speak - so MLX-LM is wired as a new recognized `prov_name`
+  (`"mlx-lm"`, hyphen required) in `build_adapter()`'s existing `OpenAICompatibleAdapter` branch,
+  alongside `"openai"`/`"lm studio"`/`"openrouter"`.
+- This was a deliberate decision, not an oversight: the only existing in-process LangChain
+  integration for MLX (`langchain_community.chat_models.mlx.ChatMLX` +
+  `langchain_community.llms.mlx_pipeline.MLXPipeline`) is a dead end - `langchain-community` was
+  archived/sunset by LangChain in June 2026, a maintainer-proposed standalone `langchain-mlx`
+  package was explicitly closed as "not planned," `ChatMLX` has no async streaming (`_agenerate()`
+  exists but no `_astream()`), populates no `usage_metadata`/`response_metadata` at all (would
+  break `health_check.py`'s generic token/timing extraction entirely), and has an unresolved
+  broken-tool-calling bug (`langchain-community#308`). A bespoke adapter built directly against
+  `mlx_lm.load()`/`stream_generate()` would mean hand-rolling token counting and a
+  LangChain-compatible response shape from scratch, with no ecosystem precedent to build on.
+- Net effect of routing through `OpenAICompatibleAdapter` instead: real async streaming, real
+  `usage_metadata` (so `health_check.py` needed zero changes), and no new adapter file at all.
+- The user runs `mlx_lm.server` themselves as a separate local process (`python -m mlx_lm.server
+  --model <path-or-hf-repo>`), exactly like `ollama serve`/the LM Studio app already are - it is
+  not a Python dependency of OChaT, since OChaT only ever talks HTTP to it. No new
+  `pyproject.toml` dependency was needed for MLX-LM support.
+- `prov_api_key` needs no real credential - by convention (mirroring the existing Ollama row,
+  which stores `"0"`), enter a placeholder value since the field is non-nullable but
+  `mlx_lm.server` doesn't validate any `Authorization` header by default.
+- **Scope decision**: no auto-sync (`_sync_mlxlm_models`) - models are added manually via the
+  Model Manager TUI, matching the OpenAI/OpenRouter precedent rather than the Ollama/LM Studio
+  one, to keep this addition focused (the sync-function family also has no existing test coverage
+  to build on today).
+
 ### Building and Distribution
 - `uv build` - Build the package using setuptools
 - `uv install -e .` - Install package in editable mode
@@ -349,10 +442,22 @@ CLI commands map to service layer functions:
 The database is automatically initialized when first accessed. Use `init_db()` to create tables manually.
 
 ### Adding New Providers
-1. Create adapter in `adapters/` extending `LLMAdapter`
-2. Add provider configuration to `LLMProviderConfig`
-3. Update `provider_manager.py` service
-4. Add TUI screens if needed
+1. If the provider speaks the OpenAI chat-completions API (like MLX-LM does), just add its
+   `prov_name` string to `build_adapter()`'s existing `OpenAICompatibleAdapter` branch
+   (`services/adapter_manager.py`) - no new adapter class needed. Otherwise, create a new adapter
+   in `adapters/` extending `LLMAdapter` (see `adapters/anthropic.py` for the current template).
+2. Wire it into `build_adapter()` (`services/adapter_manager.py`) - this is the actual dispatch
+   point (keyed on `provider_config.prov_name.lower()`), not `provider_manager.py` (which only
+   handles provider-row CRUD/validation - `prov_name` is free text with no enum anywhere).
+3. `LLMProviderConfig`'s existing fields (`prov_api_key`, `prov_endpoint`, `prov_params`) already
+   cover most connection needs; for a provider with no real API key concept, store a placeholder
+   value (e.g. `"0"`, the existing Ollama convention) rather than relaxing the non-nullable field.
+4. If the new adapter should raise its own SDK-specific exceptions, add an `is_retryable()` branch
+   in `adapters/resilience.py` for them - don't assume an existing provider's exception hierarchy
+   covers a new one (verified needed for Anthropic; `anthropic.*` exceptions are a distinct set of
+   classes from `openai.*`, not a shared base type, despite similar shapes).
+5. Add TUI screens if needed (usually not - the Provider/Model Manager screens are already
+   provider-agnostic).
 
 ### Testing
 Tests are configured via pytest. Use `uv run pytest` to run the test suite.
@@ -428,9 +533,10 @@ Workspaces are self-contained chat environments with their own configuration and
 
 ### Phase 3: New Adapters (Medium Priority)
 - [x] OpenAI-compatible adapter (OpenAI, Groq, local APIs) - `OpenAICompatibleAdapter`; also now
-  covers OpenRouter (see "Provider Routing Preferences" above)
-- [ ] MLX-LM adapter (Apple Silicon local models)
-- [ ] Anthropic Claude adapter (API)
+  covers OpenRouter (see "Provider Routing Preferences" above) and MLX-LM (see "MLX-LM: Provider
+  Recognition, Not a Native Adapter" below)
+- [x] MLX-LM adapter (Apple Silicon local models) - not a native adapter class, see above
+- [x] Anthropic Claude adapter (API) - `AnthropicAdapter`, see "Anthropic Adapter" below
 
 ### Phase 4: Advanced Features (Low Priority)
 - [ ] Context-aware parameter adjustment
@@ -452,6 +558,8 @@ Workspaces are self-contained chat environments with their own configuration and
 ✅ Health Check System (real completion-based checks, tokens/sec, on-demand via TUI/CLI) and
    Error Recovery/Retry Logic (exponential backoff + circuit breaker at the adapter layer) - see
    "Health Check System & Resilience Layer" (Phase 2, both items closed)
-🟡 Next most natural steps: an Anthropic adapter (Phase 3, follows the `OpenAICompatibleAdapter`
-   pattern), or formalizing the `adapter.client` convention `health_check.py` currently relies on
-   before the next new adapter (MLX-LM, Phase 3) is built - see that section's "Known limitation"
+✅ AnthropicAdapter and MLX-LM provider recognition via `OpenAICompatibleAdapter` (Phase 3, both
+   items closed) - see "Anthropic Adapter" / "MLX-LM: Provider Recognition, Not a Native Adapter"
+🟡 Next most natural steps: formalizing the `adapter.client` convention `health_check.py` relies
+   on (see that section's "Known limitation" - now three adapters share this informal contract,
+   not two), or starting Phase 4's advanced features

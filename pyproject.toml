@@ -30,10 +30,20 @@ dependencies = [
   # (langchain.memory/.schema removed; ConversationSummaryMemory replaced with our own
   # summarization call in adapters/memory.py).
   "langchain>=1.0.0,<2",
+  "langchain-anthropic>=1.0.0,<2",
   "langchain-core>=1.0.0,<2",
   "langchain-ollama>=1.0.0,<2",
   "langchain-openai>=1.0.0,<2",
   "langchain-text-splitters>=1.0.0,<2",
+  # Only transitive via langchain-anthropic until adapters/resilience.py started importing it
+  # directly for exception classification (anthropic.RateLimitError/APIConnectionError/etc.) -
+  # same reasoning as the httpx/openai promotion above. See CLAUDE.md "Anthropic Adapter".
+  # Capped below the current 1.x major deliberately, not as an oversight: is_retryable()'s
+  # exception-class handling was verified against the 0.x line (0.125.0) specifically; bumping to
+  # the 1.x major (which langchain-anthropic==1.7.0's own `<2.0.0` constraint would technically
+  # allow) needs the same live verification against the installed package this project did for
+  # 0.x before that ceiling is raised - see CLAUDE.md "Anthropic Adapter".
+  "anthropic>=0.40,<1",
   "ollama>=0.4.8",
   "pyperclip>=1.8.2",
   "rich>=14.0.0",

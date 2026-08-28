@@ -3,6 +3,7 @@ import json
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+from ocht.adapters.anthropic import AnthropicAdapter
 from ocht.adapters.base import LLMAdapter
 from ocht.adapters.memory import MemoryConfig
 from ocht.adapters.ollama import OllamaAdapter
@@ -50,6 +51,32 @@ def _build_openai_compatible_params(provider_config: LLMProviderConfig) -> dict[
         if isinstance(provider_routing, dict) and provider_routing:
             default_params["extra_body"] = {"provider": provider_routing}
     return default_params
+
+
+def _build_anthropic_params(provider_config: LLMProviderConfig) -> dict[str, Any]:
+    """Builds the `default_params` for AnthropicAdapter.
+
+    Unlike `_build_openai_compatible_params()`, there is no OpenRouter-style `extra_body` routing
+    concept for Anthropic - `ChatAnthropic` has no equivalent "forward this JSON blob into the raw
+    request" escape hatch, so `provider_config.prov_params` is deliberately not read here. A user
+    wanting to override generation parameters for a specific Anthropic model uses
+    `Model.model_params` instead (merged on top by `_merge_model_params()`, same as every other
+    provider) - e.g. `{"max_tokens": 8192, "temperature": 0.5, "top_p": 0.9}`.
+
+    No `max_tokens` default is set here (unlike an earlier draft of this function) - the installed
+    `langchain-anthropic` version already defaults `max_tokens` to a large, sensible value when
+    unset, so hardcoding one here would only make it harder to notice if that default ever changes
+    upstream.
+
+    Args:
+        provider_config: The provider configuration to build params for (unused beyond the type
+            signature - kept for symmetry with `_build_openai_compatible_params()` and in case a
+            future Anthropic-specific per-provider setting is added).
+
+    Returns:
+        Params dict ready to pass as `default_params` to `AnthropicAdapter`.
+    """
+    return {"temperature": 0.7}
 
 
 def _merge_model_params(default_params: dict[str, Any], model_params: str | None) -> dict[str, Any]:
@@ -180,8 +207,8 @@ def build_adapter(db, provider_config: LLMProviderConfig, model: Model) -> LLMAd
             resolution logic, this function never substitutes a different model.
 
     Returns:
-        A configured `OllamaAdapter`/`OpenAICompatibleAdapter`, or None if `provider_config.prov_name`
-        isn't one of the supported provider types.
+        A configured `OllamaAdapter`/`AnthropicAdapter`/`OpenAICompatibleAdapter`, or None if
+        `provider_config.prov_name` isn't one of the supported provider types.
     """
     provider_name = provider_config.prov_name.lower()
     memory_config = _build_memory_config(db)
@@ -192,10 +219,22 @@ def build_adapter(db, provider_config: LLMProviderConfig, model: Model) -> LLMAd
             default_params=_merge_model_params({"temperature": 0.5}, model.model_params),
             memory_config=memory_config
         )
-    if provider_name in ["openai", "lm studio", "openrouter"]:
-        # Use OpenAI-compatible adapter for OpenAI, LM Studio, and OpenRouter - all three speak
-        # the OpenAI chat-completions API, just with different base_url/api_key configuration on
-        # the LLMProviderConfig row.
+    if provider_name == "anthropic":
+        return AnthropicAdapter(
+            model=model.model_name,
+            api_key=provider_config.prov_api_key,
+            base_url=provider_config.prov_endpoint,
+            default_params=_merge_model_params(
+                _build_anthropic_params(provider_config), model.model_params
+            ),
+            memory_config=memory_config
+        )
+    if provider_name in ["openai", "lm studio", "openrouter", "mlx-lm"]:
+        # Use OpenAI-compatible adapter for OpenAI, LM Studio, OpenRouter, and MLX-LM - all four
+        # speak the OpenAI chat-completions API. MLX-LM has no native LangChain integration worth
+        # using (see CLAUDE.md's "MLX-LM: Provider Recognition, Not a Native Adapter") - users run
+        # `python -m mlx_lm.server` themselves, exactly like `ollama serve`/LM Studio are already
+        # separate external processes this project only ever talks HTTP to.
         return OpenAICompatibleAdapter(
             model=model.model_name,
             api_key=provider_config.prov_api_key,

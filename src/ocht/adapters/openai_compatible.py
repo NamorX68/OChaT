@@ -2,7 +2,7 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 
 from ocht.adapters.base import LLMAdapter
@@ -94,30 +94,10 @@ class OpenAICompatibleAdapter(LLMAdapter):
             self._history.append(HumanMessage(content=prompt))
             self._history.append(AIMessage(content=full_response))
 
-    def _convert_tuples_to_messages(self, message_tuples: list[tuple[str, str]]) -> list[BaseMessage]:
-        """Convert list of (role, content) tuples to LangChain message objects."""
-        messages = []
-        for role, content in message_tuples:
-            if role.lower() in ['human', 'user']:
-                messages.append(HumanMessage(content=content))
-            elif role.lower() in ['ai', 'assistant']:
-                messages.append(AIMessage(content=content))
-            elif role.lower() == 'system':
-                messages.append(SystemMessage(content=content))
-            else:
-                # Default to system message for unknown roles
-                messages.append(SystemMessage(content=content))
-        return messages
-
-    def is_local_model(self) -> bool:
-        """Check if this is a local model (LM Studio) or cloud API (OpenAI)."""
-        return self.base_url is not None and 'localhost' in self.base_url
-
-    def get_provider_info(self) -> dict[str, Any]:
-        """Get information about the current provider configuration."""
-        return {
-            'model': self.model_name,
-            'base_url': self.base_url,
-            'is_local': self.is_local_model(),
-            'provider': 'LM Studio' if self.is_local_model() else 'OpenAI'
-        }
+    # _convert_tuples_to_messages() lives on LLMAdapter (base.py) - shared with every adapter.
+    #
+    # is_local_model()/get_provider_info() were removed as dead code (no callers anywhere in the
+    # codebase) - their 'LM Studio'-vs-'OpenAI' binary was already wrong for OpenRouter, and would
+    # have mislabeled MLX-LM as 'LM Studio' too, purely from checking 'localhost' in base_url.
+    # `AdapterManager.get_adapter_info()` already gets the real provider name from the DB row
+    # (`LLMProviderConfig.prov_name`), not by guessing from the adapter's base_url.

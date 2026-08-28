@@ -7,6 +7,7 @@ module docstring for the full rationale).
 """
 from unittest.mock import AsyncMock, patch
 
+import anthropic
 import httpx
 import ollama
 import openai
@@ -18,6 +19,7 @@ from ocht.adapters.resilience import (
     CircuitBreakerState,
     RetryPolicy,
     call_with_resilience,
+    compute_delay,
     is_retryable,
     stream_with_resilience,
 )
@@ -26,15 +28,16 @@ _REQUEST = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
 
 
 def _api_status_error(
-    status_code: int, cls: type[openai.APIStatusError] = openai.APIStatusError
-) -> openai.APIStatusError:
-    """Builds a real `openai` status-error instance at a given HTTP status code.
+    status_code: int,
+    cls: type[openai.APIStatusError] | type[anthropic.APIStatusError] = openai.APIStatusError,
+) -> openai.APIStatusError | anthropic.APIStatusError:
+    """Builds a real `openai`/`anthropic` status-error instance at a given HTTP status code.
 
     Args:
         status_code: The HTTP status code the response should carry.
-        cls: Which `openai` exception class to instantiate - defaults to the generic
-            `APIStatusError` for status codes that don't have one of the more specific named
-            subclasses (`RateLimitError`, `NotFoundError`, etc.) exercised elsewhere.
+        cls: Which `openai`/`anthropic` exception class to instantiate - defaults to the generic
+            `openai.APIStatusError` for status codes that don't have one of the more specific
+            named subclasses (`RateLimitError`, `NotFoundError`, etc.) exercised elsewhere.
 
     Returns:
         A constructed exception instance, with a real `httpx.Response` backing `.status_code`.
@@ -60,6 +63,13 @@ class TestIsRetryable:
             (ollama.ResponseError(error="boom", status_code=503), True),
             (ollama.ResponseError(error="boom", status_code=404), False),
             (ollama.ResponseError(error="boom"), True),  # status_code defaults to -1
+            (_api_status_error(429, anthropic.RateLimitError), True),
+            (_api_status_error(401, anthropic.AuthenticationError), False),
+            (_api_status_error(404, anthropic.NotFoundError), False),
+            (_api_status_error(400, anthropic.BadRequestError), False),
+            (_api_status_error(500, anthropic.APIStatusError), True),  # generic 5xx APIStatusError
+            (anthropic.APIConnectionError(request=_REQUEST), True),
+            (anthropic.APITimeoutError(request=_REQUEST), True),
             (httpx.ConnectError("boom"), True),
             (ValueError("boom"), False),
         ],
@@ -67,6 +77,21 @@ class TestIsRetryable:
     def test_classifies_exceptions(self, exc: BaseException, expected: bool) -> None:
         """Should classify each exception type/status boundary as retryable or not."""
         assert is_retryable(exc) is expected
+
+
+class TestComputeDelay:
+    """Tests for `compute_delay()`'s rate-limit-aware base delay selection."""
+
+    def test_anthropic_rate_limit_error_uses_rate_limit_base_delay(self) -> None:
+        """Should use `rate_limit_base_delay_seconds` (not `base_delay_seconds`) for a RateLimitError."""
+        policy = RetryPolicy(
+            base_delay_seconds=0.01, rate_limit_base_delay_seconds=5.0, multiplier=1.0, jitter_seconds=0.0
+        )
+        rate_limit_error = _api_status_error(429, anthropic.RateLimitError)
+
+        delay = compute_delay(attempt=1, policy=policy, exc=rate_limit_error)
+
+        assert delay == 5.0
 
 
 class TestCircuitBreaker:

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from ocht.adapters.anthropic import AnthropicAdapter
 from ocht.adapters.memory import MemoryConfig
 from ocht.adapters.ollama import OllamaAdapter
 from ocht.adapters.openai_compatible import OpenAICompatibleAdapter
@@ -15,6 +16,7 @@ from ocht.repositories.model import create_model
 from ocht.repositories.setting import create_setting
 from ocht.services.adapter_manager import (
     AdapterManager,
+    _build_anthropic_params,
     _build_memory_config,
     _build_openai_compatible_params,
     _merge_model_params,
@@ -50,6 +52,54 @@ def test_switch_adapter_recognizes_openrouter_as_openai_compatible(temp_db):
     manager = AdapterManager()
     assert manager.switch_adapter(provider_id, "openai/gpt-4o-mini") is True
     assert isinstance(manager.get_current_adapter(), OpenAICompatibleAdapter)
+
+
+def test_switch_adapter_recognizes_anthropic(temp_db):
+    """Test that an Anthropic provider resolves to AnthropicAdapter."""
+    with get_session() as db:
+        provider = create_llm_provider_config(db, name="Anthropic", api_key="sk-ant-test")
+        create_model(db, "claude-sonnet-5", model_provider_id=provider.prov_id)
+        provider_id = provider.prov_id
+
+    manager = AdapterManager()
+    assert manager.switch_adapter(provider_id, "claude-sonnet-5") is True
+    assert isinstance(manager.get_current_adapter(), AnthropicAdapter)
+
+
+@pytest.mark.parametrize("provider_name", ["mlx-lm", "MLX-LM"])
+def test_switch_adapter_recognizes_mlxlm_as_openai_compatible(temp_db, provider_name):
+    """Test that an MLX-LM provider (any casing) resolves to OpenAICompatibleAdapter.
+
+    `mlx_lm.server` exposes an OpenAI-compatible HTTP API, so it should be handled by the same
+    branch as "openai"/"lm studio"/"openrouter" - see CLAUDE.md's "MLX-LM: Provider Recognition,
+    Not a Native Adapter" section.
+    """
+    with get_session() as db:
+        provider = create_llm_provider_config(
+            db, name=provider_name, api_key="0", endpoint="http://localhost:8080/v1"
+        )
+        create_model(db, "some-local-model", model_provider_id=provider.prov_id)
+        provider_id = provider.prov_id
+
+    manager = AdapterManager()
+    assert manager.switch_adapter(provider_id, "some-local-model") is True
+    assert isinstance(manager.get_current_adapter(), OpenAICompatibleAdapter)
+
+
+def test_build_anthropic_params_does_not_forward_prov_params():
+    """Test that `_build_anthropic_params` ignores `prov_params`, unlike the OpenAI-compatible helper.
+
+    There is no OpenRouter-style `extra_body`/provider-routing concept for Anthropic, so
+    `prov_params` must be read only by `_build_openai_compatible_params()`, never by this helper.
+    """
+    provider = LLMProviderConfig(
+        prov_name="Anthropic", prov_api_key="sk-ant-test", prov_params=json.dumps({"some": "routing"})
+    )
+
+    params = _build_anthropic_params(provider)
+
+    assert params == {"temperature": 0.7}
+    assert "extra_body" not in params
 
 
 def test_build_openai_compatible_params_forwards_provider_routing():

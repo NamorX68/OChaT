@@ -43,7 +43,7 @@ class ProviderEditScreen(ModalScreen):
                 Label("Name:", classes="form-label"),
                 Input(
                     value=self.provider.prov_name if self.provider else "",
-                    placeholder="Provider name (e.g., 'OpenAI', 'Ollama')",
+                    placeholder="Provider name (e.g., 'OpenAI', 'Ollama', 'Anthropic', 'mlx-lm')",
                     id="provider-name"
                 ),
                 classes="form-row"
