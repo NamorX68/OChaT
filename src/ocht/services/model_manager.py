@@ -1,4 +1,5 @@
 """Service layer for listing, validating, and syncing LLM models from external providers."""
+import json
 import subprocess
 from collections.abc import Callable
 from datetime import datetime
@@ -60,6 +61,147 @@ def _ensure_provider_exists(db, provider_id: int) -> LLMProviderConfig:
     if not provider:
         raise ValueError(f"Provider with ID {provider_id} does not exist")
     return provider
+
+
+# ============================================================================
+# MODEL GENERATION CONFIG (typed `max_tokens`/`context_window` fields backed by
+# `Model.model_params`'s single JSON column - see CLAUDE.md's "Model-Level Generation
+# Parameters")
+# ============================================================================
+
+# ChatOllama's field name for the generation-length cap.
+_OLLAMA_MAX_TOKENS_KEY = "num_predict"
+# Every other supported adapter is routed through ChatOpenAI, which uses this name natively.
+_DEFAULT_MAX_TOKENS_KEY = "max_tokens"
+# ChatOllama's field name for context window size. No other adapter's LangChain client exposes an
+# equivalent constructor parameter - context length is a fixed property of the provider's hosted
+# model rather than a request-time setting - so this is Ollama-only.
+_OLLAMA_CONTEXT_WINDOW_KEY = "num_ctx"
+
+
+def _max_tokens_key_for_provider(provider_name: str) -> str:
+    """Maps the generic "max tokens" UI concept to the key name the target adapter expects.
+
+    Args:
+        provider_name: `LLMProviderConfig.prov_name` of the model's provider.
+
+    Returns:
+        `"num_predict"` for Ollama (`ChatOllama`'s field name), `"max_tokens"` for every other
+        provider (all routed through `ChatOpenAI`, which uses that name natively).
+    """
+    return _OLLAMA_MAX_TOKENS_KEY if provider_name.lower() == "ollama" else _DEFAULT_MAX_TOKENS_KEY
+
+
+def _validate_model_params(params: str | None) -> str | None:
+    """Validates the advanced model params field as a well-formed JSON object.
+
+    Args:
+        params: Raw JSON string from the UI, or None/empty if not set.
+
+    Returns:
+        The stripped JSON string, or None if empty/not provided.
+
+    Raises:
+        ValueError: If `params` is non-empty but not valid JSON, or not a JSON object.
+    """
+    if params is None or not params.strip():
+        return None
+    stripped = params.strip()
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Model params must be valid JSON: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ValueError('Model params must be a JSON object (e.g. \'{"temperature": 0.7}\')')
+    return stripped
+
+
+def build_model_params_json(
+    advanced_params: str | None,
+    max_tokens: int | None,
+    context_window: int | None,
+    provider_name: str,
+) -> str | None:
+    """Combines the typed generation-config fields with free-form advanced params into one JSON blob.
+
+    `Model.model_params` is a single JSON column, so the dedicated `max_tokens`/`context_window`
+    UI fields and the catch-all "advanced params" text field (for e.g. `temperature`/`top_p`/
+    `top_k`) all end up merged into that one string. The typed fields always win over whatever key
+    they map to in `advanced_params`, so a stale value left over from manual JSON editing cannot
+    silently keep taking effect once a typed field is used instead.
+
+    Args:
+        advanced_params: Raw JSON string of extra parameters (already validated via
+            `_validate_model_params`), or None.
+        max_tokens: Generation length cap, or None to omit it.
+        context_window: Context window size, or None to omit it. Ignored for non-Ollama
+            providers, since no other supported adapter's client exposes it.
+        provider_name: `LLMProviderConfig.prov_name` of the model's (possibly new) provider -
+            determines which raw key `max_tokens`/`context_window` are stored under.
+
+    Returns:
+        A JSON string, or `""` if the result would be an empty object. `""` rather than `None` is
+        deliberate: the edit form always recomputes `model_params` from its current field state on
+        every save (never "leave it as-is"), and `update_model()`'s repository layer treats `None`
+        as "don't touch this field" (see `repositories/model.py`) - the same `None`-vs-`""`
+        convention `LLMProviderConfig.prov_params` already uses (see CLAUDE.md's "Provider Routing
+        Preferences"). Passing `None` here for an intentionally-cleared config would silently
+        leave the model's previous `model_params` in place.
+
+    Raises:
+        json.JSONDecodeError: If `advanced_params` is non-empty but not valid JSON. Callers are
+            expected to validate it first via `_validate_model_params`, as every current call site
+            (`create_model_with_validation`, `update_model_with_validation`) already does.
+    """
+    merged: dict[str, Any] = json.loads(advanced_params) if advanced_params else {}
+    merged.pop(_OLLAMA_MAX_TOKENS_KEY, None)
+    merged.pop(_DEFAULT_MAX_TOKENS_KEY, None)
+    merged.pop(_OLLAMA_CONTEXT_WINDOW_KEY, None)
+
+    if max_tokens is not None:
+        merged[_max_tokens_key_for_provider(provider_name)] = max_tokens
+    if context_window is not None and provider_name.lower() == "ollama":
+        merged[_OLLAMA_CONTEXT_WINDOW_KEY] = context_window
+
+    return json.dumps(merged) if merged else ""
+
+
+def split_model_params_for_editing(
+    model_params: str | None, provider_name: str
+) -> tuple[int | None, int | None, str | None]:
+    """Decomposes a model's `model_params` JSON into the typed edit-form fields plus the rest.
+
+    Inverse of `build_model_params_json()` - used to pre-fill the model edit form's dedicated
+    "Max Tokens"/"Context Window" inputs, leaving everything else (e.g. `temperature`, `top_p`,
+    `top_k`) in the advanced-params text field.
+
+    Args:
+        model_params: The model's current `model_params` JSON string, or None.
+        provider_name: `LLMProviderConfig.prov_name` of the model's current provider - determines
+            which raw key is read as `max_tokens`/`context_window`.
+
+    Returns:
+        A `(max_tokens, context_window, advanced_params_json)` tuple. `advanced_params_json` is
+        None if nothing is left over after extracting the typed fields.
+    """
+    if not model_params:
+        return None, None, None
+
+    try:
+        parsed = json.loads(model_params)
+    except json.JSONDecodeError:
+        # Malformed JSON already stored (e.g. edited outside the app) - surface it unchanged in
+        # the advanced field rather than losing it, and don't try to extract typed fields from it.
+        return None, None, model_params
+
+    if not isinstance(parsed, dict):
+        return None, None, model_params
+
+    remaining = dict(parsed)
+    max_tokens = remaining.pop(_max_tokens_key_for_provider(provider_name), None)
+    context_window = remaining.pop(_OLLAMA_CONTEXT_WINDOW_KEY, None) if provider_name.lower() == "ollama" else None
+
+    return max_tokens, context_window, (json.dumps(remaining) if remaining else None)
 
 
 # ============================================================================
@@ -138,7 +280,8 @@ def get_unavailable_models() -> list[Model]:
 
 
 def create_model_with_validation(name: str, provider_id: int, description: str | None = None,
-                                 version: str | None = None, params: str | None = None) -> Model:
+                                 version: str | None = None, params: str | None = None,
+                                 max_tokens: int | None = None, context_window: int | None = None) -> Model:
     """Creates model with business logic validation.
 
     Args:
@@ -146,17 +289,24 @@ def create_model_with_validation(name: str, provider_id: int, description: str |
         provider_id: Provider ID
         description: Optional description
         version: Optional version
-        params: Optional parameters
+        params: Optional advanced parameters as a raw JSON object (e.g. temperature/top_p/top_k)
+        max_tokens: Optional generation length cap - stored under the key the provider's adapter
+            expects (see `_max_tokens_key_for_provider`)
+        context_window: Optional context window size - only stored for Ollama providers, see
+            `build_model_params_json`
+
     Returns:
         Model: The created model
     Raises:
         ValueError: On validation errors
     """
     validated_name = _validate_model_name(name)
+    validated_params = _validate_model_params(params)
 
     def _create_model(db):
         _check_model_name_uniqueness(db, validated_name)
-        _ensure_provider_exists(db, provider_id)
+        provider = _ensure_provider_exists(db, provider_id)
+        final_params = build_model_params_json(validated_params, max_tokens, context_window, provider.prov_name)
 
         return create_model(
             db=db,
@@ -164,7 +314,10 @@ def create_model_with_validation(name: str, provider_id: int, description: str |
             model_provider_id=provider_id,
             model_description=description,
             model_version=version,
-            model_params=params
+            # A brand-new row has no prior value to preserve, so "" (build_model_params_json's
+            # "nothing configured" signal) collapses straight to None here rather than storing a
+            # literal empty string.
+            model_params=final_params or None
         )
 
     return _with_session(_create_model)
@@ -172,16 +325,21 @@ def create_model_with_validation(name: str, provider_id: int, description: str |
 
 def update_model_with_validation(old_name: str, new_name: str | None = None,
                                  provider_id: int | None = None, description: str | None = None,
-                                 version: str | None = None, params: str | None = None) -> Model | None:
+                                 version: str | None = None, params: str | None = None,
+                                 max_tokens: int | None = None, context_window: int | None = None) -> Model | None:
     """Updates model with business logic validation.
 
     Args:
         old_name: Current model name
         new_name: New model name (optional, None means don't change)
-        provider_id: New provider ID (optional)
+        provider_id: New provider ID (optional, None means don't change)
         description: New description (optional)
         version: New version (optional)
-        params: New parameters (optional)
+        params: New advanced parameters as a raw JSON object (optional, e.g. temperature/top_p/top_k)
+        max_tokens: New generation length cap (optional) - stored under the key the target
+            provider's adapter expects (see `_max_tokens_key_for_provider`)
+        context_window: New context window size (optional) - only stored if the target provider
+            is Ollama, see `build_model_params_json`
 
     Returns:
         Optional[Model]: The updated model or None if not found
@@ -189,9 +347,10 @@ def update_model_with_validation(old_name: str, new_name: str | None = None,
         ValueError: On validation errors
     """
     validated_old_name = _validate_model_name(old_name)
+    validated_params = _validate_model_params(params)
 
     def _update_model(db):
-        _ensure_model_exists(db, validated_old_name)
+        existing_model = _ensure_model_exists(db, validated_old_name)
 
         validated_new_name = new_name
         if new_name:  # Only validate if new name is provided (not None)
@@ -199,9 +358,12 @@ def update_model_with_validation(old_name: str, new_name: str | None = None,
             if validated_new_name != validated_old_name:
                 _check_model_name_uniqueness(db, validated_new_name, validated_old_name)
 
-        # Validate provider exists if provided
-        if provider_id is not None:
-            _ensure_provider_exists(db, provider_id)
+        # Resolve the target provider - the one being switched to if provider_id is given,
+        # otherwise the model's current provider - since max_tokens/context_window are stored
+        # under provider-specific keys (see build_model_params_json).
+        target_provider_id = provider_id if provider_id is not None else existing_model.model_provider_id
+        target_provider = _ensure_provider_exists(db, target_provider_id)
+        final_params = build_model_params_json(validated_params, max_tokens, context_window, target_provider.prov_name)
 
         return update_model(
             db=db,
@@ -210,7 +372,7 @@ def update_model_with_validation(old_name: str, new_name: str | None = None,
             model_provider_id=provider_id,
             model_description=description,
             model_version=version,
-            model_params=params
+            model_params=final_params
         )
 
     return _with_session(_update_model)

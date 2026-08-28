@@ -7,6 +7,7 @@ from langchain_ollama import ChatOllama
 
 from ocht.adapters.base import LLMAdapter
 from ocht.adapters.memory import HybridMemoryStrategy, MemoryConfig
+from ocht.adapters.resilience import RetryPolicy
 
 
 class OllamaAdapter(LLMAdapter):
@@ -18,6 +19,7 @@ class OllamaAdapter(LLMAdapter):
         base_url: str = "http://localhost:11434",
         default_params: dict[str, Any] | None = None,
         memory_config: MemoryConfig | None = None,
+        retry_policy: RetryPolicy | None = None,
     ):
         """Initializes the Ollama client and its conversation memory.
 
@@ -26,7 +28,10 @@ class OllamaAdapter(LLMAdapter):
             base_url: URL of the Ollama server.
             default_params: Optional default parameters passed to the `ChatOllama` client (e.g. temperature).
             memory_config: Optional configuration for the hybrid memory strategy.
+            retry_policy: Optional retry/backoff configuration for transient call failures. See
+                `LLMAdapter.__init__()`/`adapters/resilience.py`.
         """
+        super().__init__(retry_policy=retry_policy)
         self.client = ChatOllama(
             model=model,
             base_url=base_url,
@@ -59,8 +64,8 @@ class OllamaAdapter(LLMAdapter):
         # Convert tuples to message objects for LangChain
         message_objects = self._convert_tuples_to_messages(messages)
 
-        # LLM asynchron aufrufen
-        response = await self.client.ainvoke(message_objects, **kwargs)
+        # LLM asynchron aufrufen (mit Retry/Circuit-Breaker gegen transiente Fehler)
+        response = await self._resilient_ainvoke(lambda: self.client.ainvoke(message_objects, **kwargs))
 
         # Kontext speichern
         self._history.append(HumanMessage(content=prompt))
@@ -87,9 +92,9 @@ class OllamaAdapter(LLMAdapter):
         # Convert tuples to message objects for LangChain
         message_objects = self._convert_tuples_to_messages(messages)
 
-        # Streaming response
+        # Streaming response (mit Retry/Circuit-Breaker vor dem ersten Chunk, siehe resilience.py)
         full_response = ""
-        async for chunk in self.client.astream(message_objects, **kwargs):
+        async for chunk in self._resilient_astream(lambda: self.client.astream(message_objects, **kwargs)):
             if chunk.content:
                 full_response += chunk.content
                 yield chunk.content

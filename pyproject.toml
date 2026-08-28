@@ -21,6 +21,11 @@ keywords = ["tui", "langchain", "llm", "cli"]
 dependencies = [
   "alembic>=1.15.2",
   "click>=8.3.3",
+  # httpx/openai were previously only transitive (via langchain-openai/ollama); now imported
+  # directly by adapters/resilience.py to classify retryable exceptions (httpx.TransportError,
+  # openai.RateLimitError/APIConnectionError/etc.) - see CLAUDE.md "Error Recovery & Retry Logic".
+  "httpx>=0.28,<1",
+  "openai>=2.0,<3",
   # On the 1.x line - see CLAUDE.md "Dependency Upgrades" section for migration notes
   # (langchain.memory/.schema removed; ConversationSummaryMemory replaced with our own
   # summarization call in adapters/memory.py).

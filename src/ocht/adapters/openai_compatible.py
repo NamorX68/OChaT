@@ -7,6 +7,7 @@ from langchain_openai import ChatOpenAI
 
 from ocht.adapters.base import LLMAdapter
 from ocht.adapters.memory import HybridMemoryStrategy, MemoryConfig
+from ocht.adapters.resilience import RetryPolicy
 
 
 class OpenAICompatibleAdapter(LLMAdapter):
@@ -19,6 +20,7 @@ class OpenAICompatibleAdapter(LLMAdapter):
         base_url: str | None = None,
         default_params: dict[str, Any] | None = None,
         memory_config: MemoryConfig | None = None,
+        retry_policy: RetryPolicy | None = None,
     ):
         """Initialize OpenAI-compatible adapter.
 
@@ -28,7 +30,10 @@ class OpenAICompatibleAdapter(LLMAdapter):
             base_url: Custom base URL (e.g., 'http://localhost:1234/v1' for LM Studio)
             default_params: Default parameters like temperature, max_tokens
             memory_config: Configuration for hybrid memory system
+            retry_policy: Optional retry/backoff configuration for transient call failures. See
+                `LLMAdapter.__init__()`/`adapters/resilience.py`.
         """
+        super().__init__(retry_policy=retry_policy)
         # Setup client parameters
         client_kwargs = {
             'model': model,
@@ -61,8 +66,8 @@ class OpenAICompatibleAdapter(LLMAdapter):
         # Convert tuples to message objects for LangChain
         message_objects = self._convert_tuples_to_messages(messages)
 
-        # Call LLM asynchronously
-        response = await self.client.ainvoke(message_objects, **kwargs)
+        # Call LLM asynchronously (with retry/circuit-breaker against transient failures)
+        response = await self._resilient_ainvoke(lambda: self.client.ainvoke(message_objects, **kwargs))
 
         # Save context
         self._history.append(HumanMessage(content=prompt))
@@ -77,9 +82,9 @@ class OpenAICompatibleAdapter(LLMAdapter):
         # Convert tuples to message objects for LangChain
         message_objects = self._convert_tuples_to_messages(messages)
 
-        # Streaming response
+        # Streaming response (with retry/circuit-breaker before the first chunk, see resilience.py)
         full_response = ""
-        async for chunk in self.client.astream(message_objects, **kwargs):
+        async for chunk in self._resilient_astream(lambda: self.client.astream(message_objects, **kwargs)):
             if chunk.content:
                 full_response += chunk.content
                 yield chunk.content

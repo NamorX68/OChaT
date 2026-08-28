@@ -1,12 +1,71 @@
 """Abstract base interface that all LLM adapters must implement."""
 import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
+
+from ocht.adapters.resilience import CircuitBreaker, RetryPolicy, call_with_resilience, stream_with_resilience
 
 
 class LLMAdapter(ABC):
     """Einheitliches Interface für alle LLM-Adapter."""
+
+    def __init__(self, retry_policy: RetryPolicy | None = None):
+        """Initializes the shared retry/circuit-breaker resilience state for this adapter.
+
+        Concrete adapters should call `super().__init__(retry_policy=retry_policy)` and route
+        their actual LangChain client calls through `_resilient_ainvoke()`/`_resilient_astream()`
+        instead of calling `self.client.ainvoke()`/`self.client.astream()` directly - see
+        `adapters/resilience.py` for why this exists and how the streaming case differs.
+
+        Args:
+            retry_policy: Retry/backoff configuration. Defaults to a new `RetryPolicy()` if not
+                provided.
+        """
+        self._retry_policy = retry_policy or RetryPolicy()
+        self._circuit_breaker = CircuitBreaker()
+
+    async def _resilient_ainvoke[T](self, call: Callable[[], Awaitable[T]]) -> T:
+        """Runs one atomic client call through this adapter's retry policy and circuit breaker.
+
+        Args:
+            call: A zero-argument callable returning the awaitable to run (e.g.
+                `lambda: self.client.ainvoke(messages)`).
+
+        Returns:
+            The awaited result of `call()`.
+
+        Raises:
+            CircuitBreakerOpenError: If this adapter's circuit breaker is currently open.
+            Exception: The last exception raised by `call()`, if all retry attempts fail or the
+                exception is classified as non-retryable. See `resilience.is_retryable()`.
+        """
+        return await call_with_resilience(call, retry_policy=self._retry_policy, circuit_breaker=self._circuit_breaker)
+
+    def _resilient_astream[T](self, make_stream: Callable[[], AsyncIterator[T]]) -> AsyncIterator[T]:
+        """Runs a client stream through this adapter's retry policy and circuit breaker.
+
+        Only retries a failure that happens before the first chunk arrives - see
+        `adapters/resilience.py:stream_with_resilience()`'s docstring for why.
+
+        Args:
+            make_stream: A zero-argument callable returning a fresh async iterator (e.g.
+                `lambda: self.client.astream(messages)`).
+
+        Returns:
+            An async iterator yielding the stream's items. Since this returns an async generator,
+            no code runs (and no exception can be raised) until the caller starts consuming it,
+            e.g. via `async for chunk in self._resilient_astream(...)`.
+
+        Raises:
+            CircuitBreakerOpenError: If this adapter's circuit breaker is open, raised on the
+                first iteration step rather than on this call itself (see the Returns note above).
+            Exception: The triggering exception, if it occurs after streaming has already started,
+                or if every pre-first-chunk retry attempt is exhausted/non-retryable.
+        """
+        return stream_with_resilience(
+            make_stream, retry_policy=self._retry_policy, circuit_breaker=self._circuit_breaker
+        )
 
     @abstractmethod
     async def send_prompt_async(self, prompt: str, **kwargs) -> str:

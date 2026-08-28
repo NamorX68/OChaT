@@ -109,6 +109,165 @@ OChaT is a modular Python TUI application that orchestrates Large Language Model
   is unambiguous - a JSON string can never legitimately be empty - see
   `update_llm_provider_config()`'s docstring for the `None` vs `""` distinction).
 
+### Model-Level Generation Parameters (`Model.model_params`)
+
+- `model_params` is a JSON object of default generation parameters for one specific model (e.g.
+  `{"temperature": 1.0, "num_predict": 32768}`), forwarded verbatim into the LangChain chat-model
+  constructor (`ChatOllama`/`ChatOpenAI`) via `_merge_model_params()` in
+  `services/adapter_manager.py`. It is merged on top of the provider-level `default_params`
+  (the hardcoded `{"temperature": 0.5}` for Ollama, or `_build_openai_compatible_params()`'s
+  `{"temperature": 0.7, ...}` for the OpenAI-compatible branch) - model-level keys win on
+  conflicts, since a setting scoped to one model is more specific than a provider-wide default.
+- This closes a real gap: the `model_params` column existed in the schema and was already editable
+  via `tui/screens/model_manager.py` before this, but `_create_adapter()` never read it back - the
+  hardcoded per-provider temperature was applied unconditionally regardless of which model was
+  selected. Generation parameters like temperature/max_tokens are a property of the model being
+  queried, not of the transport used to reach it, so they belong on `Model` rather than on
+  `LLMProviderConfig` or in a new provider-scoped config object.
+- A malformed or non-dict `model_params` value is ignored gracefully (falls back to the
+  provider-level params alone) rather than blocking the adapter switch - same pattern as
+  `prov_params` above.
+- `max_tokens` and `context_window` (Ollama-only) now have dedicated, validated fields in the
+  model edit form (`tui/screens/model_manager.py`) instead of requiring the raw key names to be
+  hand-typed into the JSON blob - see `services/model_manager.py`'s `build_model_params_json()`/
+  `split_model_params_for_editing()`. `streaming_enabled` was dropped from consideration:
+  `tui/app.py:_process_prompt()` already always attempts streaming first and falls back
+  automatically, so a manual per-model toggle would solve a problem that doesn't exist.
+
+#### Current Ollama `model_params` values and their sourcing
+
+The four locally-installed Ollama models each have a `model_params` row, set with values sourced
+from two places rather than guessed:
+
+- **Sampling params (`temperature`, `top_p`, `top_k`) for the three `qwen3.8:27b-*` variants**
+  (`-mxfp8`, `-mlx`, `-nvfp4` - same underlying `qwen3_5` weights, different quantizations) were
+  copied from this machine's working OpenCode config (`~/.config/opencode/opencode.json`, its
+  "medium reasoning effort" profile for the same models): `{"temperature": 1.0, "top_p": 0.95,
+  "top_k": 20}`. This is deliberately **not** a low temperature - these are reasoning/"thinking"
+  models (`ollama show` lists the `thinking` capability), and lowering temperature on a
+  reasoning-model's chain-of-thought is known to degrade it (the same failure mode documented for
+  Qwen3 and DeepSeek-R1) rather than making code output more precise the way it would for a
+  non-reasoning model.
+- **`gemma4:31b-mxfp8`** has no override in that OpenCode config at all, so its sampling params
+  were left at Ollama's own native defaults (`{"temperature": 1.0, "top_p": 0.95, "top_k": 64}`
+  per `ollama show gemma4:31b-mxfp8`) rather than invented.
+- **`num_ctx: 262144`** (each model's native max, from `ollama show`) and **`num_predict: 32768`**
+  are the same for all four models and are *not* from OpenCode (its config doesn't set either).
+  They were chosen after empirically checking actual memory use via `ollama ps` on this machine's
+  Mac Studio M4 (64 GB unified memory): loading `qwen3.8:27b-mxfp8` or `gemma4:31b-mxfp8` with the
+  full native `num_ctx` reported only ~32 GB total, 100% GPU-resident - comfortable headroom, so no
+  need to trade context length down for memory safety on this hardware. `num_predict: 32768` is a
+  deliberate cap (not `-1`/unbounded) to allow generating very large files/functions while still
+  guarding against runaway generations, sized relative to the now-large context budget.
+- **Known gap:** OpenCode's Qwen profile also sets `min_p: 0.0` and `presence_penalty: 0.0`.
+  `langchain-ollama`'s `ChatOllama` (the version pinned in this project) has no constructor field
+  for either - confirmed via `ChatOllama.model_fields` and its `_chat_params()` source, which
+  builds the request's `options` dict from a fixed, hardcoded list of fields that does not include
+  `min_p` or `presence_penalty`. There is currently no way to set them through this adapter; a
+  `model_params` JSON key for either would simply be dropped, not forwarded.
+
+### Memory Configuration via App Settings (`MemoryConfig`)
+
+- Every `HybridMemoryStrategy` tunable (`adapters/memory.py`'s `MemoryConfig` dataclass -
+  `max_context_tokens`, `recent_messages_count`, `code_retention_priority`,
+  `summarization_threshold`) used to be an unconditional hardcoded default: no adapter anywhere
+  ever constructed a `MemoryConfig` with custom values, so every conversation ran with
+  `max_context_tokens=4000` etc. regardless of provider/model/workflow - the same "field exists
+  but nothing ever overrides it" gap `Model.model_params` had before "Model-Level Generation
+  Parameters" above fixed it.
+- `services/adapter_manager.py`'s `_build_memory_config()` now reads each field from the generic
+  `Setting` key-value store instead, via well-known keys on `AdapterManager`:
+  `MEMORY_MAX_CONTEXT_TOKENS_KEY` ("memory_max_context_tokens"),
+  `MEMORY_RECENT_MESSAGES_COUNT_KEY` ("memory_recent_messages_count"),
+  `MEMORY_CODE_RETENTION_PRIORITY_KEY` ("memory_code_retention_priority"),
+  `MEMORY_SUMMARIZATION_THRESHOLD_KEY` ("memory_summarization_threshold"). `_create_adapter()`
+  calls it once per adapter switch and passes the result as `memory_config=` to both
+  `OllamaAdapter`/`OpenAICompatibleAdapter` (also previously never wired - both adapters always
+  fell back to their own internal `MemoryConfig()` default).
+- These are global settings, not per-model ones (unlike `Model.model_params`): the memory
+  strategy governs how conversation history is trimmed/summarized regardless of which
+  provider/model is currently active, so one `Setting` row applies across all of them.
+- Editable today via the existing generic Settings Manager screen
+  (`tui/screens/settings_manager.py`, Ctrl+N in the Settings screen) - add a row with one of the
+  four key names above and an integer (or float, for `code_retention_priority`) value. No
+  dedicated form/labels exist for these yet, unlike the typed `max_tokens`/`context_window` model
+  fields; it's the same raw key-value editing the screen already offered for
+  `current_provider_id`/`current_model_name`.
+- A missing, non-numeric, or non-positive value for any of the four keys falls back to that
+  field's original hardcoded default (`_read_positive_int_setting`/`_read_positive_float_setting`)
+  rather than blocking adapter creation - same "ignore malformed config" precedent as
+  `prov_params`/`model_params`.
+
+### Health Check System & Resilience Layer
+
+- **Health checks** (`services/health_check.py`) send one real completion request per model,
+  unlike `sync_llm_models()`'s existing sync flow, which only confirms a model is *listed* by its
+  provider (`GET /api/tags` for Ollama, `GET /models` for LM Studio) and never validates that it
+  can actually complete a request. Tries the streaming path first (`_try_streaming()`), falls back
+  to non-streaming (`_try_non_streaming()`) on failure, and records which path succeeded, latency,
+  tokens/second, and any error onto the `Model` row via `record_health_check_result()`
+  (`Model.last_check_latency_ms`/`last_check_tokens_per_second`/`last_check_error`, alongside the
+  pre-existing `is_available`/`last_checked` - both the old listing-based sync and the new
+  completion-based check share those two columns rather than each having their own conflicting
+  availability flag).
+- **`HEALTH_CHECK_PROMPT`** asks for a ~200-word short story, not a trivial one-token reply like
+  "Say OK." - tokens/second measured off a 1-3 token response is dominated by connection/prompt-eval
+  overhead rather than real sustained throughput (observed swinging ~19-50 tok/s run to run on the
+  same model with the old one-token prompt); a longer generation gives a materially more stable
+  reading (~28-30 tok/s across repeated runs in practice) at the cost of a slightly slower, slightly
+  more expensive (for paid providers) check.
+- **Tokens/second** (`_tokens_per_second()`) prefers Ollama's native `eval_count`/`eval_duration`
+  from `response_metadata` (pure generation time, excludes prompt-eval/network overhead) and falls
+  back to `usage_metadata['output_tokens']` divided by client-measured wall-clock time for every
+  other provider (OpenAI-compatible responses carry no timing metadata at all).
+- **Triggered on-demand only** - a "💓 Health Check" button/Ctrl+H binding in
+  `tui/screens/model_manager.py`, and `ocht health-check [--provider-id ID] [--model NAME]` on the
+  CLI (checks one model, one provider's models, or every model across every provider - including
+  paid cloud ones - depending on which flags are given). No scheduler/background timer exists in
+  this codebase, and none was introduced for this - a deliberate v1 scope decision.
+- **Never touches the active chat adapter**: `services/adapter_manager.py`'s `build_adapter(db,
+  provider_config, model)` was extracted from `AdapterManager._create_adapter()` specifically so
+  health checks can build a throwaway adapter for any (provider, model) pair without mutating
+  `AdapterManager`'s `_current_adapter`/`_current_provider_id`/`_current_model_name` singleton -
+  checking model B's health must never disrupt whichever model the user is actively chatting with.
+- **Bypasses the retry/circuit-breaker layer below on purpose**: a health check's entire point is
+  to report the model's *current, true* status - masking a failure behind automatic retries would
+  produce a falsely-rosy result. It talks to `adapter.client` (the raw LangChain client each
+  concrete adapter exposes by convention, not a declared part of `LLMAdapter`'s interface)
+  directly, bypassing `send_prompt_async`/`send_prompt_stream` entirely. **Known limitation**: this
+  convention isn't enforced by the type system - a future adapter that doesn't wrap a LangChain
+  client (e.g. the Phase 3 MLX-LM adapter) would need either a `client`-compatible shim or a
+  formalized contract on `LLMAdapter` (a review flagged this as worth addressing when that adapter
+  is built, not before - `check_model_health()` already reports a clear, distinguishable error
+  ("... does not expose a 'client' attribute...") rather than a confusing `AttributeError` in that
+  case, so it fails legibly today even without the formalized contract).
+
+- **Error recovery & retry** (`adapters/resilience.py`) wraps the adapters' actual LangChain
+  client calls (`self.client.ainvoke()`/`self.client.astream()`) with exponential backoff
+  (`RetryPolicy`) and a circuit breaker (`CircuitBreaker`), via `LLMAdapter.__init__()`'s new
+  `_resilient_ainvoke()`/`_resilient_astream()` helpers - `OllamaAdapter`/`OpenAICompatibleAdapter`
+  route through these instead of calling `self.client` directly, with no change to their public
+  `send_prompt_async`/`send_prompt_stream` signatures.
+- **Exception classification** (`is_retryable()`): rate limits (429) and connection/timeout/5xx
+  errors are retried; authentication/permission/not-found/bad-request errors (and any unrecognized
+  exception type) fail immediately rather than being masked as transient.
+- **Streaming retries only before the first chunk arrives** (`stream_with_resilience()`) -
+  retrying transparently after a chunk has already been yielded (and, in the TUI, already rendered
+  into a chat bubble) would duplicate or reset visible content, so a post-first-chunk failure is
+  recorded on the circuit breaker but re-raised immediately, letting `tui/app.py`'s pre-existing
+  stream→async fallback (`_process_prompt`/`_process_prompt_fallback`, unchanged) handle it exactly
+  as before. The two layers are complementary: retry/circuit-breaker is a *resilience* strategy
+  (retry the same call shape), the TUI's fallback is a *degradation* strategy (switch shape) -
+  a stream that exhausts its retries still falls through to the existing fallback.
+- **Circuit breaker state is per-adapter-instance**, not persisted across provider/model switches
+  or app restarts - it resets naturally every time `build_adapter()` constructs a fresh adapter.
+  Documented v1 limitation, not an oversight; note that this also means re-`switch_adapter()`-ing
+  to the *same* (provider, model) after a failure gets a fresh, closed breaker rather than an
+  accumulating failure count.
+- `httpx`/`openai` were promoted from transitive (via `langchain-openai`/`ollama`) to explicit
+  `pyproject.toml` dependencies, since `resilience.py` imports them directly for exception
+  classification (`uv audit` clean at these versions).
+
 ### Building and Distribution
 - `uv build` - Build the package using setuptools
 - `uv install -e .` - Install package in editable mode
@@ -220,29 +379,52 @@ Workspaces are self-contained chat environments with their own configuration and
     adapters fed it a single pre-summarized message instead of real history (see "Dependency
     Upgrades" above) - before that, this logic was dead code despite the class existing
   - [x] Code blocks retained longer than natural text - `_select_important_messages()`
-  - [ ] Function names/references separate indexing - not implemented as a real index; only a
-    minor regex extraction inside the heuristic fallback summary (`_create_simple_summary()`)
   - [x] Token-aware context management - `_trim_to_token_limit()`
 
 ### Phase 2: Configuration & Health Monitoring (Medium Priority)
-- [ ] Provider-agnostic AdapterConfig class
-  - temperature, max_tokens, context_window, streaming_enabled: still hardcoded per adapter
-    (`{"temperature": 0.5}` for Ollama, `0.7` for OpenAI-compatible) - not yet a generic,
-    provider-agnostic config object
-  - memory_strategy: partially - `MemoryConfig` exists and is passed through, but only
-    `HybridMemoryStrategy` exists as a concrete strategy (see Phase 4)
-  - `LLMProviderConfig.prov_params` (see "Provider Routing Preferences" above) covers one related
-    but narrower case: OpenRouter-specific provider-routing prefs, not general model parameters
-- [ ] Health check system
-  - Model availability testing
-  - Response time monitoring
-  - Streaming capability validation
-- [ ] Error recovery & retry logic
-  - Exponential backoff
-  - Circuit breaker pattern
-  - Graceful degradation (stream → async → error): partially - `_process_prompt` falls back from
-    streaming to `_process_prompt_fallback()` (async) when the error message contains "stream",
-    but there's no backoff/circuit-breaker layer around either path
+- [x] Model-scoped generation config (formerly framed as a "provider-agnostic AdapterConfig
+      class" - reframed because temperature/max_tokens/context_window are properties of the model
+      being queried, not of the provider/transport used to reach it; see "Model-Level Generation
+      Parameters" above)
+  - [x] temperature: per-model override flows through `Model.model_params` ->
+    `_merge_model_params()`, taking precedence over the provider-level hardcoded default
+    (`{"temperature": 0.5}` for Ollama, `0.7` for OpenAI-compatible)
+  - [x] max_tokens: dedicated, validated "Max Tokens" field in `tui/screens/model_manager.py`'s
+    model edit form. `services/model_manager.py`'s `build_model_params_json()`/
+    `split_model_params_for_editing()` translate the one generic UI field to/from the key each
+    adapter actually expects (`num_predict` for Ollama, `max_tokens` for OpenAI-compatible) and
+    merge it with the free-form "Advanced Params" field (temperature/top_p/top_k/...) into the
+    same single `model_params` JSON column
+  - [x] context_window: dedicated "Context Window" field, Ollama-only (`num_ctx`) - disabled in
+    the UI for any other provider, since no other supported adapter's LangChain client exposes an
+    equivalent constructor parameter (context length is a fixed property of the hosted model on
+    those providers, not a request-time setting)
+  - [~] streaming_enabled: dropped from this list rather than built - `tui/app.py:_process_prompt()`
+    already always attempts `send_prompt_stream()` first and falls back to the async method on
+    failure, so a manual per-model toggle would be a solution without an observed problem;
+    revisit only if a concrete case surfaces where that automatic fallback isn't good enough
+  - [x] memory_strategy tuning: `MemoryConfig` is now actually constructed with real values (via
+    `_build_memory_config()`, see "Memory Configuration via App Settings" above) and passed
+    through to both adapters, instead of always silently falling back to hardcoded defaults;
+    swapping in a different `MemoryStrategy` *implementation* is still only architecturally
+    possible - only `HybridMemoryStrategy` exists (see Phase 4)
+  - `LLMProviderConfig.prov_params` (see "Provider Routing Preferences" above) remains the
+    provider-scoped counterpart: OpenRouter-specific provider-routing prefs, not model parameters
+- [x] Health check system - see "Health Check System & Resilience Layer" below
+  - [x] Model availability testing - real completion call via `services/health_check.py`, not just
+    `sync_llm_models()`'s provider-listing probe
+  - [x] Response time monitoring - `Model.last_check_latency_ms`
+  - [x] Streaming capability validation - tries the streaming path first, falls back to
+    non-streaming, records which path (`"stream"`/`"async"`) succeeded
+  - Bonus (not originally scoped, requested during implementation): tokens/second -
+    `Model.last_check_tokens_per_second`
+- [x] Error recovery & retry logic - see "Health Check System & Resilience Layer" below
+  - [x] Exponential backoff - `adapters/resilience.py`'s `RetryPolicy`/`compute_delay()`
+  - [x] Circuit breaker pattern - `adapters/resilience.py`'s `CircuitBreaker`, one per adapter
+    instance
+  - [x] Graceful degradation (stream → async → error): the pre-existing `_process_prompt` ->
+    `_process_prompt_fallback()` TUI-layer fallback is unchanged, but now composes with the new
+    adapter-layer retry/circuit-breaker (see below) instead of being the only resilience mechanism
 
 ### Phase 3: New Adapters (Medium Priority)
 - [x] OpenAI-compatible adapter (OpenAI, Groq, local APIs) - `OpenAICompatibleAdapter`; also now
@@ -263,6 +445,13 @@ Workspaces are self-contained chat environments with their own configuration and
 ✅ TUI streaming implementation with live updates
 ✅ Mouse escape sequence filtering
 ✅ HybridMemoryStrategy actually active in production (see Phase 1)
-🟡 Next most natural steps, given what's already touched: a provider-agnostic AdapterConfig
-   (Phase 2) to stop hardcoding temperature/max_tokens per adapter, and/or an Anthropic adapter
-   (Phase 3) as the next OpenAI-compatible-pattern addition
+✅ Per-model temperature override via `Model.model_params` -> `_merge_model_params()` (see
+   "Model-Level Generation Parameters" and Phase 2)
+✅ Dedicated "Max Tokens"/"Context Window" fields in the model edit form, backed by the same
+   `model_params` column (Phase 2 - see `build_model_params_json()`/`split_model_params_for_editing()`)
+✅ Health Check System (real completion-based checks, tokens/sec, on-demand via TUI/CLI) and
+   Error Recovery/Retry Logic (exponential backoff + circuit breaker at the adapter layer) - see
+   "Health Check System & Resilience Layer" (Phase 2, both items closed)
+🟡 Next most natural steps: an Anthropic adapter (Phase 3, follows the `OpenAICompatibleAdapter`
+   pattern), or formalizing the `adapter.client` convention `health_check.py` currently relies on
+   before the next new adapter (MLX-LM, Phase 3) is built - see that section's "Known limitation"

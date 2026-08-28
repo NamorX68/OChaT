@@ -5,10 +5,12 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select, Static
 
 from ocht.core.models import LLMProviderConfig, Model
+from ocht.services.health_check import run_health_check
 from ocht.services.model_manager import (
     create_model_with_validation,
     delete_model_with_checks,
     get_models_with_provider_info,
+    split_model_params_for_editing,
     update_model_with_validation,
 )
 from ocht.services.provider_manager import get_available_providers
@@ -36,6 +38,17 @@ class ModelEditScreen(ModalScreen):
         self.is_edit_mode = model is not None
         self.providers: list[LLMProviderConfig] = []
 
+    def _provider_name(self, provider_id: int | None) -> str | None:
+        """Looks up a loaded provider's name by ID.
+
+        Args:
+            provider_id: The provider ID to look up, or None.
+
+        Returns:
+            The provider's `prov_name`, or None if not found/not given.
+        """
+        return next((p.prov_name for p in self.providers if p.prov_id == provider_id), None)
+
     def compose(self):
         """Build the modal form for creating or editing a model."""
         title = "Edit Model" if self.is_edit_mode else "Create New Model"
@@ -50,6 +63,17 @@ class ModelEditScreen(ModalScreen):
         provider_options = [
             (f"{provider.prov_name} (ID: {provider.prov_id})", provider.prov_id) for provider in self.providers
         ]
+        initial_provider_id = (
+            self.model.model_provider_id if self.model else (provider_options[0][1] if provider_options else None)
+        )
+        initial_provider_name = self._provider_name(initial_provider_id) or ""
+
+        # Split the model's existing model_params JSON into the typed fields plus whatever's left
+        # over (e.g. temperature/top_p/top_k) - see split_model_params_for_editing()'s docstring.
+        max_tokens, context_window, advanced_params = split_model_params_for_editing(
+            self.model.model_params if self.model else None, initial_provider_name
+        )
+        context_window_is_ollama = initial_provider_name.lower() == "ollama"
 
         yield Vertical(
             Static(f"🤖 {title}", classes="modal-title"),
@@ -66,11 +90,7 @@ class ModelEditScreen(ModalScreen):
                 Label("Model Provider:", classes="form-label"),
                 Select(
                     options=provider_options,
-                    value=(
-                        self.model.model_provider_id
-                        if self.model
-                        else (provider_options[0][1] if provider_options else None)
-                    ),
+                    value=initial_provider_id,
                     id="model-provider"
                 ),
                 classes="form-row"
@@ -94,10 +114,31 @@ class ModelEditScreen(ModalScreen):
                 classes="form-row"
             ),
             Horizontal(
-                Label("Parameters:", classes="form-label"),
+                Label("Max Tokens:", classes="form-label"),
                 Input(
-                    value=self.model.model_params if self.model and self.model.model_params else "",
-                    placeholder="Optional: JSON parameters (e.g., '{\"temperature\": 0.7}')",
+                    value=str(max_tokens) if max_tokens is not None else "",
+                    placeholder="Optional: max response length",
+                    id="model-max-tokens"
+                ),
+                classes="form-row"
+            ),
+            Horizontal(
+                Label("Context Window:", classes="form-label"),
+                Input(
+                    value=str(context_window) if context_window is not None else "",
+                    placeholder=(
+                        "Optional: Ollama only" if context_window_is_ollama else "Not supported by this provider"
+                    ),
+                    disabled=not context_window_is_ollama,
+                    id="model-context-window"
+                ),
+                classes="form-row"
+            ),
+            Horizontal(
+                Label("Advanced Params:", classes="form-label"),
+                Input(
+                    value=advanced_params or "",
+                    placeholder="Optional: extra JSON params (e.g., '{\"temperature\": 0.7}')",
                     id="model-params"
                 ),
                 classes="form-row"
@@ -117,6 +158,21 @@ class ModelEditScreen(ModalScreen):
         elif event.button.id == "save-btn":
             self.action_save()
 
+    def on_select_changed(self, event: Select.Changed):
+        """Enables the Context Window field only while the selected provider is Ollama.
+
+        Args:
+            event: The provider `Select` widget's change event.
+        """
+        if event.select.id != "model-provider":
+            return
+        is_ollama = (self._provider_name(event.value) or "").lower() == "ollama"
+        context_window_input = self.query_one("#model-context-window", Input)
+        context_window_input.disabled = not is_ollama
+        context_window_input.placeholder = "Optional: Ollama only" if is_ollama else "Not supported by this provider"
+        if not is_ollama:
+            context_window_input.value = ""
+
     def action_cancel(self):
         """Cancel model editing."""
         self.dismiss(None)
@@ -124,6 +180,30 @@ class ModelEditScreen(ModalScreen):
     def action_save(self):
         """Save the model."""
         self.save_model()
+
+    def _parse_optional_int(self, field_id: str, label: str) -> int | None:
+        """Reads an `Input` field as an optional positive integer.
+
+        Args:
+            field_id: The widget ID of the `Input` to read.
+            label: Human-readable field name used in the error notification.
+
+        Returns:
+            The parsed integer, or None if the field is blank.
+
+        Raises:
+            ValueError: If the field is non-blank but not a valid positive integer.
+        """
+        raw = self.query_one(f"#{field_id}", Input).value.strip()
+        if not raw:
+            return None
+        try:
+            value = int(raw)
+        except ValueError as e:
+            raise ValueError(f"{label} must be a whole number") from e
+        if value <= 0:
+            raise ValueError(f"{label} must be a positive number")
+        return value
 
     def save_model(self):
         """Save the model data."""
@@ -142,6 +222,9 @@ class ModelEditScreen(ModalScreen):
             return
 
         try:
+            max_tokens = self._parse_optional_int("model-max-tokens", "Max Tokens")
+            context_window = self._parse_optional_int("model-context-window", "Context Window")
+
             if self.is_edit_mode:
                 # Update existing model using service function
                 updated_model = update_model_with_validation(
@@ -150,7 +233,9 @@ class ModelEditScreen(ModalScreen):
                     provider_id=selected_provider_id,
                     description=description,
                     version=version,
-                    params=params
+                    params=params,
+                    max_tokens=max_tokens,
+                    context_window=context_window
                 )
                 if updated_model:
                     self.dismiss(updated_model)
@@ -163,7 +248,9 @@ class ModelEditScreen(ModalScreen):
                     selected_provider_id,
                     description=description,
                     version=version,
-                    params=params
+                    params=params,
+                    max_tokens=max_tokens,
+                    context_window=context_window
                 )
                 self.dismiss(new_model)
         except ValueError as e:
@@ -183,6 +270,7 @@ class ModelManagerScreen(Screen):
         ("ctrl+n", "add_model", "Add Model"),
         ("ctrl+e", "edit_model", "Edit Model"),
         ("ctrl+d", "delete_model", "Delete Model"),
+        ("ctrl+h", "health_check", "Health Check"),
     ]
 
     def __init__(self, **kwargs):
@@ -200,7 +288,8 @@ class ModelManagerScreen(Screen):
         yield Header(show_clock=True)
         yield Vertical(
             Static(
-                "Model Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, ESC to go back",
+                "Model Management - Use Ctrl+N to add, Ctrl+E to edit, Ctrl+D to delete, "
+                "Ctrl+H to health-check, ESC to go back",
                 classes="help-text",
             ),
             DataTable(id="model-table"),
@@ -208,6 +297,7 @@ class ModelManagerScreen(Screen):
                 Button("➕ Add Model", variant="primary", id="add-model-btn"),
                 Button("✏️ Edit", variant="default", id="edit-model-btn"),
                 Button("🗑️ Delete", variant="error", id="delete-model-btn"),
+                Button("💓 Health Check", variant="default", id="health-check-btn"),
                 Button("🔄 Refresh", variant="default", id="refresh-btn"),
                 classes="model-toolbar"
             ),
@@ -225,7 +315,7 @@ class ModelManagerScreen(Screen):
     def setup_table(self):
         """Setup the data table columns."""
         table = self.query_one("#model-table", DataTable)
-        table.add_columns("Name", "Model Provider", "Description", "Version", "Created")
+        table.add_columns("Name", "Model Provider", "Description", "Version", "Params", "Health", "Created")
 
     def load_models(self):
         """Load models from database and populate the table."""
@@ -247,10 +337,64 @@ class ModelManagerScreen(Screen):
                     provider_name,
                     model.model_description or "None",
                     model.model_version or "None",
+                    self._format_params_preview(model.model_params),
+                    self._format_health_preview(model),
                     model.model_created_at.strftime("%Y-%m-%d %H:%M")
                 )
         except Exception as e:
             self.notify(f"Error loading models: {str(e)}", severity="error")
+
+    def _format_health_preview(self, model: Model, max_length: int = 40) -> str:
+        """Formats a model's last health check result for the overview table.
+
+        Mirrors `_format_params_preview()`'s truncation style, so the table stays scannable even
+        for long error messages.
+
+        Args:
+            model: The model whose `last_checked`/`last_check_*` fields to summarize.
+            max_length: Maximum number of characters to show before truncating with an ellipsis.
+
+        Returns:
+            "— Not checked" if no health check has ever run, "❌ <truncated error>" if the last
+            one failed, otherwise "✅" plus whichever of latency/tokens-per-second are available.
+        """
+        if model.last_checked is None:
+            return "— Not checked"
+
+        if model.last_check_error:
+            prefix = "❌ "
+            remaining = max_length - len(prefix)
+            error = model.last_check_error
+            if len(error) > remaining:
+                error = error[:remaining - 1] + "…"
+            return prefix + error
+
+        parts = []
+        if model.last_check_latency_ms is not None:
+            parts.append(f"{model.last_check_latency_ms:.0f}ms")
+        if model.last_check_tokens_per_second is not None:
+            parts.append(f"{model.last_check_tokens_per_second:.1f} tok/s")
+        return "✅ " + " / ".join(parts) if parts else "✅"
+
+    def _format_params_preview(self, params: str | None, max_length: int = 40) -> str:
+        """Formats model_params for the overview table, truncating long JSON for readability.
+
+        Mirrors `ProviderManagerScreen._format_params_preview()`, which does the same for
+        `LLMProviderConfig.prov_params` - both fields only surfaced their raw JSON in the edit
+        form before this, with no way to see at a glance whether a row even had params set.
+
+        Args:
+            params: The raw JSON string of model generation parameters, or None if unset.
+            max_length: Maximum number of characters to show before truncating with an ellipsis.
+
+        Returns:
+            "None" if unset, otherwise the JSON string truncated to `max_length` characters.
+        """
+        if not params:
+            return "None"
+        if len(params) <= max_length:
+            return params
+        return params[:max_length - 1] + "…"
 
     def on_button_pressed(self, event: Button.Pressed):
         """Handle button presses."""
@@ -260,6 +404,8 @@ class ModelManagerScreen(Screen):
             self.edit_model()
         elif event.button.id == "delete-model-btn":
             self.delete_model()
+        elif event.button.id == "health-check-btn":
+            self.run_worker(self.health_check_selected())
         elif event.button.id == "refresh-btn":
             self.load_models()
 
@@ -270,6 +416,40 @@ class ModelManagerScreen(Screen):
     def action_add_model(self):
         """Add a new model."""
         self.add_model()
+
+    def action_health_check(self):
+        """Health-check the selected model (Ctrl+H binding)."""
+        self.run_worker(self.health_check_selected())
+
+    async def health_check_selected(self):
+        """Runs a real completion against the selected model and refreshes its row.
+
+        Builds its own throwaway adapter (via `run_health_check()` -> `build_adapter()`) rather
+        than touching the active chat adapter - selecting a row here and health-checking it never
+        switches what the user is actually chatting with, see `services/health_check.py`.
+        """
+        table = self.query_one("#model-table", DataTable)
+        if table.cursor_row is None:
+            self.notify("Please select a model to check", severity="warning")
+            return
+
+        model = self.models[table.cursor_row]
+        self.notify(f"Checking {model.model_name}…")
+
+        try:
+            result = await run_health_check(model.model_provider_id, model.model_name)
+        except Exception as e:
+            self.notify(f"Error running health check: {str(e)}", severity="error")
+            return
+
+        self.load_models()
+        if result.is_available:
+            message = f"{model.model_name}: OK via {result.path}"
+            if result.tokens_per_second:
+                message += f" ({result.tokens_per_second:.1f} tok/s)"
+            self.notify(message, severity="information")
+        else:
+            self.notify(f"{model.model_name}: FAILED - {result.error}", severity="error")
 
     def action_edit_model(self):
         """Edit selected model."""

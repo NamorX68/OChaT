@@ -4,10 +4,11 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from ocht.adapters.base import LLMAdapter
+from ocht.adapters.memory import MemoryConfig
 from ocht.adapters.ollama import OllamaAdapter
 from ocht.adapters.openai_compatible import OpenAICompatibleAdapter
 from ocht.core.db import get_session
-from ocht.core.models import LLMProviderConfig
+from ocht.core.models import LLMProviderConfig, Model
 from ocht.repositories.llm_provider_config import get_llm_provider_config_by_id
 from ocht.repositories.model import get_model_by_name
 from ocht.repositories.setting import create_setting, get_setting_by_key, update_setting
@@ -51,11 +52,175 @@ def _build_openai_compatible_params(provider_config: LLMProviderConfig) -> dict[
     return default_params
 
 
+def _merge_model_params(default_params: dict[str, Any], model_params: str | None) -> dict[str, Any]:
+    """Merges a model's own default generation parameters onto a provider-level params dict.
+
+    `Model.model_params` is a JSON object of default generation parameters for one specific model
+    (e.g. `{"temperature": 0.2, "max_tokens": 4096}`), forwarded verbatim into the LangChain
+    chat-model constructor (`ChatOllama`/`ChatOpenAI`) alongside the provider-level params built by
+    `_build_openai_compatible_params()` (or the plain Ollama default). Model-level values win over
+    provider-level ones on key conflicts, since a setting scoped to one model is more specific than
+    a provider-wide default such as the hardcoded temperature.
+
+    A malformed `model_params` value is ignored (falls back to `default_params` alone) rather than
+    blocking the adapter switch entirely - same behavior as `_build_openai_compatible_params()`'s
+    handling of `prov_params`.
+
+    Args:
+        default_params: Provider-level default parameters to start from.
+        model_params: The model's `model_params` JSON string, if any.
+
+    Returns:
+        A new dict with `model_params` merged over `default_params`.
+    """
+    merged = dict(default_params)
+    if model_params:
+        try:
+            parsed = json.loads(model_params)
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+        if isinstance(parsed, dict):
+            merged.update(parsed)
+    return merged
+
+
+def _read_positive_int_setting(db, key: str, default: int) -> int:
+    """Reads a positive-integer app setting, falling back to `default` if unset or invalid.
+
+    Args:
+        db: Active database session.
+        key: The `Setting.setting_key` to look up.
+        default: Value to use if the setting is missing, not a valid integer, or not positive.
+
+    Returns:
+        The parsed integer, or `default`.
+    """
+    setting = get_setting_by_key(db, key)
+    if not setting:
+        return default
+    try:
+        value = int(setting.setting_value)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _read_positive_float_setting(db, key: str, default: float) -> float:
+    """Reads a positive-float app setting, falling back to `default` if unset or invalid.
+
+    Args:
+        db: Active database session.
+        key: The `Setting.setting_key` to look up.
+        default: Value to use if the setting is missing, not a valid number, or not positive.
+
+    Returns:
+        The parsed float, or `default`.
+    """
+    setting = get_setting_by_key(db, key)
+    if not setting:
+        return default
+    try:
+        value = float(setting.setting_value)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _build_memory_config(db) -> MemoryConfig:
+    """Builds the conversation `MemoryConfig` from user-configurable global app Settings.
+
+    Every `MemoryConfig` field was previously a hardcoded dataclass default - no adapter ever
+    constructed one with custom values, so `HybridMemoryStrategy` always ran with
+    `max_context_tokens=4000`/`recent_messages_count=10`/`code_retention_priority=2.0`/
+    `summarization_threshold=20` regardless of the user's actual model/workflow. This reads each
+    field from the generic `Setting` key-value store (editable via the existing Settings Manager
+    screen - `tui/screens/settings_manager.py`, Ctrl+N to add a row with one of the
+    `AdapterManager.MEMORY_*_KEY` names below as its key), falling back to that field's original
+    hardcoded default whenever the setting is absent or holds an invalid/non-positive value -
+    same "ignore malformed config rather than block adapter creation" precedent already used for
+    `prov_params`/`model_params`.
+
+    Args:
+        db: Active database session.
+
+    Returns:
+        A `MemoryConfig` reflecting any configured overrides, or the original defaults where none
+        are set.
+    """
+    defaults = MemoryConfig()
+    return MemoryConfig(
+        max_context_tokens=_read_positive_int_setting(
+            db, AdapterManager.MEMORY_MAX_CONTEXT_TOKENS_KEY, defaults.max_context_tokens
+        ),
+        recent_messages_count=_read_positive_int_setting(
+            db, AdapterManager.MEMORY_RECENT_MESSAGES_COUNT_KEY, defaults.recent_messages_count
+        ),
+        code_retention_priority=_read_positive_float_setting(
+            db, AdapterManager.MEMORY_CODE_RETENTION_PRIORITY_KEY, defaults.code_retention_priority
+        ),
+        summarization_threshold=_read_positive_int_setting(
+            db, AdapterManager.MEMORY_SUMMARIZATION_THRESHOLD_KEY, defaults.summarization_threshold
+        ),
+    )
+
+
+def build_adapter(db, provider_config: LLMProviderConfig, model: Model) -> LLMAdapter | None:
+    """Builds a throwaway adapter for one exact (provider, model) pair. Touches no shared state.
+
+    Extracted from `AdapterManager._create_adapter()` so the real switch path (which additionally
+    mutates `AdapterManager`'s `_current_*` singleton state) and `services/health_check.py`'s
+    throwaway-adapter construction (which must NOT touch that singleton - checking one model's
+    health must never disrupt whichever model the user is actively chatting with) share identical
+    construction/param-merging logic instead of duplicating it.
+
+    Args:
+        db: Active database session.
+        provider_config: The provider configuration to build an adapter for.
+        model: The exact model to configure the adapter with - unlike `_create_adapter()`'s
+            resolution logic, this function never substitutes a different model.
+
+    Returns:
+        A configured `OllamaAdapter`/`OpenAICompatibleAdapter`, or None if `provider_config.prov_name`
+        isn't one of the supported provider types.
+    """
+    provider_name = provider_config.prov_name.lower()
+    memory_config = _build_memory_config(db)
+
+    if provider_name == "ollama":
+        return OllamaAdapter(
+            model=model.model_name,
+            default_params=_merge_model_params({"temperature": 0.5}, model.model_params),
+            memory_config=memory_config
+        )
+    if provider_name in ["openai", "lm studio", "openrouter"]:
+        # Use OpenAI-compatible adapter for OpenAI, LM Studio, and OpenRouter - all three speak
+        # the OpenAI chat-completions API, just with different base_url/api_key configuration on
+        # the LLMProviderConfig row.
+        return OpenAICompatibleAdapter(
+            model=model.model_name,
+            api_key=provider_config.prov_api_key,
+            base_url=provider_config.prov_endpoint,
+            default_params=_merge_model_params(
+                _build_openai_compatible_params(provider_config), model.model_params
+            ),
+            memory_config=memory_config
+        )
+    return None
+
+
 class AdapterManager:
     """Service for managing LLM adapters and their configuration."""
-    
+
     CURRENT_PROVIDER_KEY = "current_provider_id"
     CURRENT_MODEL_KEY = "current_model_name"
+
+    # Well-known Setting keys for globally overriding HybridMemoryStrategy's tuning - see
+    # _build_memory_config()'s docstring. Any conversation, regardless of provider/model, uses
+    # the same memory strategy, so these are global settings rather than per-model ones.
+    MEMORY_MAX_CONTEXT_TOKENS_KEY = "memory_max_context_tokens"
+    MEMORY_RECENT_MESSAGES_COUNT_KEY = "memory_recent_messages_count"
+    MEMORY_CODE_RETENTION_PRIORITY_KEY = "memory_code_retention_priority"
+    MEMORY_SUMMARIZATION_THRESHOLD_KEY = "memory_summarization_threshold"
     
     def __init__(self):
         """Initializes the manager with no active adapter, provider, or model selected."""
@@ -179,33 +344,20 @@ class AdapterManager:
                 if not model:
                     return False
             
-            # Create adapter based on provider type
+            # Create adapter based on provider type (shared with services/health_check.py - see
+            # build_adapter()'s docstring for why this is a module-level function rather than
+            # inlined here)
             try:
-                provider_name = provider_config.prov_name.lower()
-                
-                if provider_name == "ollama":
-                    self._current_adapter = OllamaAdapter(
-                        model=actual_model_name,
-                        default_params={"temperature": 0.5}
-                    )
-                elif provider_name in ["openai", "lm studio", "openrouter"]:
-                    # Use OpenAI-compatible adapter for OpenAI, LM Studio, and OpenRouter -
-                    # all three speak the OpenAI chat-completions API, just with different
-                    # base_url/api_key configuration on the LLMProviderConfig row.
-                    self._current_adapter = OpenAICompatibleAdapter(
-                        model=actual_model_name,
-                        api_key=provider_config.prov_api_key,
-                        base_url=provider_config.prov_endpoint,
-                        default_params=_build_openai_compatible_params(provider_config)
-                    )
-                else:
+                adapter = build_adapter(db, provider_config, model)
+                if adapter is None:
                     # Unsupported provider
                     return False
-                
+
+                self._current_adapter = adapter
                 self._current_provider_id = provider_id
                 self._current_model_name = actual_model_name  # Use the actual model name
                 return True
-                
+
             except Exception:
                 return False
         

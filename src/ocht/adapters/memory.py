@@ -230,11 +230,10 @@ class HybridMemoryStrategy(MemoryStrategy):
     def _create_simple_summary(self, messages: list[BaseMessage]) -> str:
         """Create a simple summary of messages (placeholder for LangChain integration)."""
         topics = set()
-        code_mentions = []
-        
+
         for msg in messages:
             content = msg.content.lower()
-            
+
             # Extract potential topics (very basic)
             if 'error' in content or 'bug' in content:
                 topics.add('debugging')
@@ -242,20 +241,8 @@ class HybridMemoryStrategy(MemoryStrategy):
                 topics.add('implementation')
             if 'test' in content:
                 topics.add('testing')
-            
-            # Note code-related discussions
-            if self._contains_code(msg.content):
-                # Extract function names or class names
-                code_refs = re.findall(r'\b(def|class)\s+(\w+)', msg.content)
-                code_mentions.extend([ref[1] for ref in code_refs])
-        
-        summary_parts = []
-        if topics:
-            summary_parts.append(f"Discussion topics: {', '.join(topics)}")
-        if code_mentions:
-            summary_parts.append(f"Code references: {', '.join(set(code_mentions))}")
-        
-        return ". ".join(summary_parts) if summary_parts else "General conversation"
+
+        return f"Discussion topics: {', '.join(topics)}" if topics else "General conversation"
     
     def _select_important_messages(self, messages: list[BaseMessage]) -> list[BaseMessage]:
         """Select important messages from older history (prioritize code-containing ones)."""

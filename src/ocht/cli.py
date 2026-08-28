@@ -1,10 +1,13 @@
 """Command-line interface entry points for the OChaT TUI application."""
+import asyncio
+
 import click
 
 from ocht.core.migration import migrate_to
 from ocht.core.version import get_version
 from ocht.services.chat import start_chat
 from ocht.services.config import export_conf, import_conf, open_conf
+from ocht.services.health_check import run_health_check, run_health_check_all, run_health_check_for_provider
 from ocht.services.model_manager import list_llm_models, sync_llm_models
 from ocht.services.workspace import create_workspace
 
@@ -67,6 +70,33 @@ def sync_models(delete_missing):
     sync_llm_models(delete_missing=delete_missing)
 
 
+@cli.command(name="health-check")
+@click.option('--provider-id', type=int, default=None, help='Only check models for this provider.')
+@click.option('--model', 'model_name', default=None, help='Only check this specific model (requires --provider-id).')
+def health_check(provider_id, model_name):
+    """Runs a real completion against one or more models to validate availability and timing."""
+    if model_name and provider_id is None:
+        raise click.UsageError("--model requires --provider-id")
+
+    if model_name:
+        results = [asyncio.run(run_health_check(provider_id, model_name))]
+    elif provider_id is not None:
+        results = asyncio.run(run_health_check_for_provider(provider_id))
+    else:
+        results = asyncio.run(run_health_check_all())
+
+    for result in results:
+        status = "✅" if result.is_available else "❌"
+        line = f"{status} {result.model_name} [{result.path}]"
+        if result.latency_ms is not None:
+            line += f" {result.latency_ms:.0f}ms"
+        if result.tokens_per_second is not None:
+            line += f" {result.tokens_per_second:.1f} tok/s"
+        click.echo(line)
+        if result.error:
+            click.echo(f"    error: {result.error}")
+
+
 @cli.command()
 @click.argument("zielversion")
 def migrate(zielversion):
@@ -89,7 +119,7 @@ def help(command):
         click.echo(f"Help for {command}")
     else:
         click.echo(
-            "Available commands: init, chat, config, list-models, sync-models, "
+            "Available commands: init, chat, config, list-models, sync-models, health-check, "
             "export-config, import-config, migrate, version"
         )
 

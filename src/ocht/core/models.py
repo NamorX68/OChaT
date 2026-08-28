@@ -82,8 +82,17 @@ class Model(SQLModel, table=True):
         model_created_at (datetime): Timestamp when the model entry was created.
         model_updated_at (datetime): Timestamp when the model entry was last updated.
         model_params (Optional[str]): JSON string with default parameters (e.g., temperature).
-        is_available (bool): Whether the model is currently available on disk.
-        last_checked (Optional[datetime]): Last time availability was checked.
+        is_available (bool): Whether the model is currently available - set either by
+            `sync_llm_models()`'s provider-listing probe or by a real completion-based health
+            check (`services/health_check.py`).
+        last_checked (Optional[datetime]): Last time availability was checked, by either mechanism
+            above.
+        last_check_latency_ms (Optional[float]): Latency of the last health check's completion
+            call, in milliseconds. None if never health-checked.
+        last_check_tokens_per_second (Optional[float]): Output tokens/second measured by the last
+            health check. None if never health-checked or unavailable at the time.
+        last_check_error (Optional[str]): Error message from the last health check, or None if it
+            succeeded (or none has run yet).
     """
     model_name: str = Field(primary_key=True)
     model_provider_id: int = Field(foreign_key="llmproviderconfig.prov_id")
@@ -94,6 +103,9 @@ class Model(SQLModel, table=True):
     model_params: str | None = None
     is_available: bool = Field(default=True)
     last_checked: datetime | None = None
+    last_check_latency_ms: float | None = None
+    last_check_tokens_per_second: float | None = None
+    last_check_error: str | None = None
 
 
 class Setting(SQLModel, table=True):
