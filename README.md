@@ -42,16 +42,16 @@
 
 > **Note:** By default, `uv sync` installs all dependencies from `pyproject.toml`, including:
 >
-> * `alembic>=1.15.2` - Database migrations
-> * `click>=8.1.8` - CLI framework
-> * `langchain>=0.3.26` - LLM orchestration
-> * `langchain-ollama>=0.3.3` - Ollama integration
-> * `langchain-openai>=0.3.30` - OpenAI integration
-> * `ollama>=0.4.8` - Ollama client
-> * `pyperclip>=1.8.2` - Clipboard operations
-> * `rich>=14.0.0` - Terminal formatting
-> * `sqlmodel>=0.0.24` - Database ORM
-> * `textual>=3.2.0` - TUI framework
+> - `alembic>=1.15.2` - Database migrations
+> - `click>=8.1.8` - CLI framework
+> - `langchain>=0.3.26` - LLM orchestration
+> - `langchain-ollama>=0.3.3` - Ollama integration
+> - `langchain-openai>=0.3.30` - OpenAI integration
+> - `ollama>=0.4.8` - Ollama client
+> - `pyperclip>=1.8.2` - Clipboard operations
+> - `rich>=14.0.0` - Terminal formatting
+> - `sqlmodel>=0.0.24` - Database ORM
+> - `textual>=3.2.0` - TUI framework
 
 ---
 
@@ -65,28 +65,28 @@ uv run ocht
 
 Or use specific commands:
 
-* **`uv run ocht init <workspace>`** - Create new workspace
-* **`uv run ocht chat`** - Start interactive chat
-* **`uv run ocht list-models`** - List available models
-* **`uv run ocht sync-models`** - Sync model metadata
-* **`uv run ocht sync-models --delete-missing`** - Sync models and remove unavailable ones
-* **`uv run ocht config`** - Open configuration editor
-* **`uv run ocht migrate <version>`** - Run database migrations
+- **`uv run ocht init <workspace>`** - Create new workspace
+- **`uv run ocht chat`** - Start interactive chat
+- **`uv run ocht list-models`** - List available models
+- **`uv run ocht sync-models`** - Sync model metadata
+- **`uv run ocht sync-models --delete-missing`** - Sync models and remove unavailable ones
+- **`uv run ocht config`** - Open configuration editor
+- **`uv run ocht migrate <version>`** - Run database migrations
 
 ### Available CLI Commands
 
-| Command | Description |
-|---------|-------------|
-| `init <name>` | Creates a new chat workspace with configuration file and history |
-| `chat` | Starts interactive chat session based on current workspace |
-| `config` | Opens configuration in default editor |
-| `export-config <file>` | Exports current settings as YAML or JSON file |
-| `import-config <file>` | Imports settings from YAML or JSON file |
-| `list-models` | Lists available LLM models grouped by provider |
-| `sync-models [--delete-missing]` | Synchronizes model metadata from external providers |
-| `migrate <version>` | Runs Alembic migrations to specified target version |
-| `version` | Shows current CLI/package version |
-| `help [command]` | Shows detailed help for a command |
+| Command                          | Description                                                      |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `init <name>`                    | Creates a new chat workspace with configuration file and history |
+| `chat`                           | Starts interactive chat session based on current workspace       |
+| `config`                         | Opens configuration in default editor                            |
+| `export-config <file>`           | Exports current settings as YAML or JSON file                    |
+| `import-config <file>`           | Imports settings from YAML or JSON file                          |
+| `list-models`                    | Lists available LLM models grouped by provider                   |
+| `sync-models [--delete-missing]` | Synchronizes model metadata from external providers              |
+| `migrate <version>`              | Runs Alembic migrations to specified target version              |
+| `version`                        | Shows current CLI/package version                                |
+| `help [command]`                 | Shows detailed help for a command                                |
 
 <details>
 <summary>Example Usage</summary>
@@ -117,21 +117,25 @@ uv run ocht list-models
 ### Core Components
 
 **Database Layer (`core/`)**
+
 - `models.py` - SQLModel entities: Workspace, Message, LLMProviderConfig, Model, Setting, PromptTemplate
 - `db.py` - Database engine, session management, and initialization
 - `migration.py` - Alembic integration for schema migrations
 
 **Repository Layer (`repositories/`)**
+
 - CRUD operations for each entity
 - Direct database access abstraction
 - Files: `workspace.py`, `message.py`, `llm_provider_config.py`, `model.py`, `setting.py`, `prompt_template.py`
 
 **Service Layer (`services/`)**
+
 - Business logic and use cases
 - Orchestrates repositories and external APIs
 - Files: `workspace.py`, `chat.py`, `config.py`, `model_manager.py`, `provider_manager.py`, `prompt_manager.py`
 
 **Adapter Layer (`adapters/`)**
+
 - LangChain integration with multiple providers
 - `base.py` - Abstract LLMAdapter interface
 - `ollama.py` - Ollama-specific implementation
@@ -139,6 +143,7 @@ uv run ocht list-models
 - `memory.py` - Advanced memory management strategies
 
 **TUI Layer (`tui/`)**
+
 - Textual-based user interface
 - `app.py` - Main TUI application with streaming support
 - `screens/` - UI screens for provider/model/workspace management
@@ -148,18 +153,21 @@ uv run ocht list-models
 ### Supported Providers
 
 **Ollama**
+
 - Local model hosting via Ollama server
 - Automatic model discovery and synchronization
 - Support for all Ollama-compatible models
 - Endpoint: `http://localhost:11434` (configurable)
 
 **LM Studio**
+
 - Local model hosting via LM Studio API
 - OpenAI-compatible API interface
 - Real-time model availability detection
 - Endpoint: `http://localhost:1234/v1` (configurable)
 
 **OpenAI**
+
 - Cloud-based models (GPT-3.5, GPT-4, etc.)
 - Full streaming and async support
 - API key authentication required
@@ -282,6 +290,7 @@ uv run ocht sync-models --delete-missing
 ### Provider Switching
 
 Within the TUI:
+
 1. Use provider selector to switch between Ollama, LM Studio, and OpenAI
 2. Model selector automatically filters available models for current provider
 3. Changes are persisted automatically
@@ -297,6 +306,7 @@ uv run pytest
 ```
 
 Test coverage includes:
+
 - Database operations and migrations
 - Memory management strategies
 - Provider adapters and model synchronization
@@ -342,7 +352,7 @@ uv run ocht migrate head
 Contributions are welcome!
 
 1. **Fork** the repository
-2. **Create feature branch**: 
+2. **Create feature branch**:
    ```bash
    git checkout -b feature/my-feature
    ```
@@ -357,6 +367,7 @@ Contributions are welcome!
 5. **Open Pull Request**
 
 Please follow our coding guidelines:
+
 - All imports at the beginning of modules
 - Code documentation in English, including inline comments
 - Docstrings in Google format
@@ -367,4 +378,3 @@ Please follow our coding guidelines:
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
-
