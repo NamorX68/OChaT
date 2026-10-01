@@ -72,6 +72,14 @@ class TestIsRetryable:
             (anthropic.APITimeoutError(request=_REQUEST), True),
             (httpx.ConnectError("boom"), True),
             (ValueError("boom"), False),
+            # `AuthenticationError`/`NotFoundError`/etc. are themselves subclasses of the generic
+            # `APIStatusError` (verified via their `__mro__`), so `SdkExceptionProfile`'s documented
+            # check order (`non_retryable_types` before `status_error_type`) is load-bearing: a 5xx
+            # status code paired with a non-retryable error type is the only way to prove
+            # `non_retryable_types` wins, since every 4xx case above would report the same `False`
+            # even if `status_error_type`'s default "5xx only" rule were checked first instead.
+            (_api_status_error(500, openai.AuthenticationError), False),
+            (_api_status_error(500, anthropic.AuthenticationError), False),
         ],
     )
     def test_classifies_exceptions(self, exc: BaseException, expected: bool) -> None:

@@ -2,15 +2,61 @@
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from ocht.adapters.resilience import CircuitBreaker, RetryPolicy, call_with_resilience, stream_with_resilience
 
 
+class AdapterClientUnavailableError(RuntimeError):
+    """Raised by `LLMAdapter.get_client()` when an adapter has no probeable client.
+
+    See `get_client()`'s docstring for the full rationale - this is the formalized replacement for
+    what used to be a silent `hasattr(adapter, "client")` check inside `services/health_check.py`.
+    """
+
+
+@runtime_checkable
+class HealthProbeClient(Protocol):
+    """The narrow client surface `services/health_check.py` actually needs to probe a model.
+
+    `get_client()` returns this instead of the much wider `BaseChatModel` (which every current
+    concrete adapter's client happens to be, since they all wrap `ChatOllama`/`ChatOpenAI`/
+    `ChatAnthropic`) so the contract itself doesn't over-promise: an architecture review of the
+    `get_client()` formalization flagged the original `-> BaseChatModel` return type as an
+    Interface Segregation gap, since `health_check.py` only ever calls `.astream()`/`.ainvoke()`
+    (see `_try_streaming()`/`_try_non_streaming()`), never any of `BaseChatModel`'s much larger
+    surface (tool binding, structured output, batching, ...). A future adapter that isn't
+    LangChain-backed only needs to satisfy these two methods to remain health-checkable - every
+    current adapter's `BaseChatModel` client already does, structurally, for free.
+    """
+
+    async def ainvoke(self, messages: list[BaseMessage], **kwargs: Any) -> Any:
+        """Sends messages and returns the complete response - see `BaseChatModel.ainvoke()`."""
+        ...
+
+    def astream(self, messages: list[BaseMessage], **kwargs: Any) -> AsyncIterator[Any]:
+        """Sends messages and streams the response - see `BaseChatModel.astream()`."""
+        ...
+
+
 class LLMAdapter(ABC):
     """Einheitliches Interface für alle LLM-Adapter."""
+
+    client: HealthProbeClient
+    """The raw LangChain chat-model client this adapter wraps.
+
+    Not declared `@abstractmethod` on purpose: every current concrete adapter
+    (`OllamaAdapter`/`OpenAICompatibleAdapter`/`AnthropicAdapter`) sets this as a plain instance
+    attribute inside its own `__init__` (e.g. `self.client = ChatOllama(...)`), which an abstract
+    *property* of the same name cannot be satisfied by (Python's ABC machinery checks for an
+    override at class-definition time, not at instance-construction time) - so this is a type
+    annotation documenting the contract, not an enforced one. `get_client()` below is the actual,
+    enforced contract point: it is what `services/health_check.py` calls, and it degrades to a
+    clear `AdapterClientUnavailableError` rather than an `AttributeError` if a future adapter
+    doesn't set `self.client`.
+    """
 
     def __init__(self, retry_policy: RetryPolicy | None = None):
         """Initializes the shared retry/circuit-breaker resilience state for this adapter.
@@ -68,6 +114,39 @@ class LLMAdapter(ABC):
         return stream_with_resilience(
             make_stream, retry_policy=self._retry_policy, circuit_breaker=self._circuit_breaker
         )
+
+    def get_client(self) -> HealthProbeClient:
+        """Returns the raw LangChain chat-model client this adapter wraps.
+
+        Formalizes what used to be a purely by-convention `self.client` attribute (set by every
+        concrete adapter's `__init__` but never declared anywhere on this interface). The sole
+        caller is `services/health_check.py`, which needs to call `.astream()`/`.ainvoke()`
+        directly and read `response_metadata`/`usage_metadata` off the raw response - bypassing
+        this class's own `send_prompt_async`/`send_prompt_stream` (and therefore the
+        retry/circuit-breaker layer; see `adapters/resilience.py`'s module docstring for why a
+        health check must report the model's true status rather than mask a failure behind
+        retries).
+
+        The default implementation below covers every current adapter (`OllamaAdapter`,
+        `OpenAICompatibleAdapter`, `AnthropicAdapter`), each of which sets `self.client` in its own
+        `__init__`. A future adapter that does not wrap a bare LangChain client (e.g. a native,
+        non-LangChain MLX-LM adapter) should override this method - either to adapt its own client
+        into the `.ainvoke()`/`.astream()` shape health checks expect, or to raise
+        `AdapterClientUnavailableError` explicitly with a more specific message - rather than
+        silently falling through to the generic message below.
+
+        Returns:
+            The underlying client, satisfying at least `HealthProbeClient`'s narrow surface.
+
+        Raises:
+            AdapterClientUnavailableError: If this adapter instance has no `client` attribute set.
+        """
+        client = getattr(self, "client", None)
+        if client is None:
+            raise AdapterClientUnavailableError(
+                f"{type(self).__name__} does not expose a 'client' attribute this health check can probe"
+            )
+        return client
 
     @abstractmethod
     async def send_prompt_async(self, prompt: str, **kwargs) -> str:

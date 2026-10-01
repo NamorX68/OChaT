@@ -232,15 +232,24 @@ from two places rather than guessed:
   checking model B's health must never disrupt whichever model the user is actively chatting with.
 - **Bypasses the retry/circuit-breaker layer below on purpose**: a health check's entire point is
   to report the model's *current, true* status - masking a failure behind automatic retries would
-  produce a falsely-rosy result. It talks to `adapter.client` (the raw LangChain client each
-  concrete adapter exposes by convention, not a declared part of `LLMAdapter`'s interface)
-  directly, bypassing `send_prompt_async`/`send_prompt_stream` entirely. **Known limitation**: this
-  convention isn't enforced by the type system - a future adapter that doesn't wrap a LangChain
-  client (e.g. the Phase 3 MLX-LM adapter) would need either a `client`-compatible shim or a
-  formalized contract on `LLMAdapter` (a review flagged this as worth addressing when that adapter
-  is built, not before - `check_model_health()` already reports a clear, distinguishable error
-  ("... does not expose a 'client' attribute...") rather than a confusing `AttributeError` in that
-  case, so it fails legibly today even without the formalized contract).
+  produce a falsely-rosy result. It talks to the client returned by `LLMAdapter.get_client()`
+  directly, bypassing `send_prompt_async`/`send_prompt_stream` entirely.
+- **`adapter.client` convention formalized (done, 2026-08-29)**: what used to be a purely
+  by-convention `self.client` attribute (set by every concrete adapter's `__init__`, not declared
+  anywhere on `LLMAdapter`) is now `LLMAdapter.get_client()` - a real interface method with a
+  default implementation (`getattr(self, "client", None)`, unchanged behavior for all three current
+  adapters) that raises the new `AdapterClientUnavailableError` instead of letting a missing
+  attribute surface as an opaque `AttributeError`. Its return type is `HealthProbeClient`
+  (`adapters/base.py`) - a `Protocol` covering only `.ainvoke()`/`.astream()`, not the full
+  `BaseChatModel` surface - deliberately narrow (an architecture review flagged the original
+  `-> BaseChatModel` typing as an Interface Segregation gap, since `health_check.py` never uses
+  anything beyond those two methods) so a future non-LangChain adapter (e.g. a native MLX-LM
+  adapter) only needs to satisfy that narrow surface, either directly or by overriding
+  `get_client()` itself. Python's ABC machinery still can't *enforce* the attribute exists (an
+  abstract property can't be satisfied by a plain instance attribute set in `__init__` - see
+  `LLMAdapter.client`'s docstring), so this remains a documented-but-unenforced contract, same as
+  before - the real improvement is centralizing the check behind one named method/exception instead
+  of duplicating `hasattr()` logic at each call site. Covered by `tests/adapter_base_tests.py`.
 
 - **Error recovery & retry** (`adapters/resilience.py`) wraps the adapters' actual LangChain
   client calls (`self.client.ainvoke()`/`self.client.astream()`) with exponential backoff
@@ -322,12 +331,19 @@ from two places rather than guessed:
   ever extended to emit a second system-tagged tuple, it must be verified against a real
   (unmocked) `AnthropicAdapter` call - the existing tests mock `ChatAnthropic` entirely and would
   not catch this.
-- **Tracked technical debt, not addressed here**: `adapters/resilience.py`'s `is_retryable()`/
-  `compute_delay()` now repeat a near-identical four-branch pattern per SDK (OpenAI, Anthropic,
-  plus Ollama's own shape) - an Open/Closed violation that will keep growing linearly with each
-  new adapter's SDK. Worth refactoring into a small data-driven table (one `SdkExceptionProfile`
-  per SDK, looped over once) before a fourth adapter's exception hierarchy is added - deferred
-  here since it's a pure refactor with no behavior change, not blocking this feature.
+- **Tech debt fixed (2026-08-29)**: `adapters/resilience.py`'s `is_retryable()`/`compute_delay()`
+  used to repeat a near-identical four-branch pattern per SDK (OpenAI, Anthropic, plus Ollama's own
+  shape) - an Open/Closed violation that would have kept growing linearly with each new adapter's
+  SDK. Replaced with a data-driven `SdkExceptionProfile` dataclass (`rate_limit_types`,
+  `non_retryable_types`, `status_error_type`/`status_code_retryable`, `connection_types`) and a
+  module-level `_SDK_PROFILES` tuple (one profile each for `openai`/`anthropic`/`ollama`) that both
+  functions loop over; adding a fourth adapter's SDK now means extending `_SDK_PROFILES` only -
+  `is_retryable()`/`compute_delay()` themselves stay unchanged. Behavior is unchanged (verified by
+  the pre-existing `tests/resilience_tests.py` parametrized cases passing against the new
+  implementation unmodified, plus two added cases - 5xx-status `AuthenticationError` for both SDKs
+  - that specifically pin down the check order `rate_limit_types` -> `non_retryable_types` ->
+  `status_error_type` -> `connection_types`, load-bearing because `RateLimitError`/the named 4xx
+  errors are themselves subclasses of the generic status-error type in both SDKs).
 
 ### MLX-LM: Provider Recognition, Not a Native Adapter
 
@@ -545,7 +561,7 @@ Workspaces are self-contained chat environments with their own configuration and
 - [ ] Custom memory strategies per use case - only `HybridMemoryStrategy` exists; `MemoryStrategy`
   is an ABC so this is architecturally possible, just nothing else implements it yet
 
-### Current Status (2026-08-28)
+### Current Status (2026-08-29)
 ✅ Base LLMAdapter with async/sync/stream methods
 ✅ OllamaAdapter and OpenAICompatibleAdapter (OpenAI/LM Studio/OpenRouter) with streaming support
 ✅ TUI streaming implementation with live updates
@@ -560,6 +576,12 @@ Workspaces are self-contained chat environments with their own configuration and
    "Health Check System & Resilience Layer" (Phase 2, both items closed)
 ✅ AnthropicAdapter and MLX-LM provider recognition via `OpenAICompatibleAdapter` (Phase 3, both
    items closed) - see "Anthropic Adapter" / "MLX-LM: Provider Recognition, Not a Native Adapter"
-🟡 Next most natural steps: formalizing the `adapter.client` convention `health_check.py` relies
-   on (see that section's "Known limitation" - now three adapters share this informal contract,
-   not two), or starting Phase 4's advanced features
+✅ `adapter.client` convention formalized into `LLMAdapter.get_client()` + a narrow
+   `HealthProbeClient` Protocol, and `adapters/resilience.py`'s per-SDK branching replaced by a
+   data-driven `SdkExceptionProfile` table (both tracked follow-ups from the Health Check/Resilience
+   and Anthropic Adapter sections above, now closed - see those sections for detail)
+🟡 Next most natural steps: Phase 4's advanced features (all four items still open), or the
+   (b) option noted in `get_client()`'s formalization write-up above (accepting the client as an
+   `LLMAdapter.__init__()` constructor parameter instead of a subclass-set attribute, for a
+   base-class-owned rather than convention-based attribute) if a fourth adapter's `__init__` is
+   ever seen setting `self.client` inconsistently

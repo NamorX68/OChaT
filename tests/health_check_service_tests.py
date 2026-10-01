@@ -1,11 +1,12 @@
 """Tests for `services/health_check.py`'s completion-based model health checking.
 
 `_try_streaming()`/`_try_non_streaming()` are pure enough to drive directly with a minimal fake
-adapter (`SimpleNamespace(client=...)`) exposing just `.astream`/`.ainvoke` - no DB or
+client (`SimpleNamespace(astream=..., ainvoke=...)`) exposing just `.astream`/`.ainvoke` - no DB or
 `build_adapter()` involved. `check_model_health()`/`run_health_check()` need a real provider+model
 row to resolve (via the `temp_db` fixture, matching `tests/adapter_manager_tests.py`'s pattern),
-with `ocht.services.health_check.build_adapter` patched to hand back the fake adapter instead of
-building a real, network-calling one.
+with `ocht.services.health_check.build_adapter` patched to hand back a fake adapter (exposing
+`get_client()`, per `LLMAdapter.get_client()`'s contract) instead of building a real,
+network-calling one.
 """
 import itertools
 import tempfile
@@ -17,6 +18,7 @@ import httpx
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
 
+from ocht.adapters.base import AdapterClientUnavailableError
 from ocht.core.db import create_db_engine, get_session, init_db
 from ocht.repositories.llm_provider_config import create_llm_provider_config
 from ocht.repositories.model import create_model, get_model_by_name
@@ -40,8 +42,9 @@ def temp_db(monkeypatch):
 
 
 def _make_fake_adapter(*, astream=None, ainvoke=None) -> SimpleNamespace:
-    """Builds a minimal stand-in for an adapter, exposing only the `.client` surface health checks use."""
-    return SimpleNamespace(client=SimpleNamespace(astream=astream, ainvoke=ainvoke))
+    """Builds a minimal stand-in for an adapter, exposing only the `get_client()` surface health checks use."""
+    client = SimpleNamespace(astream=astream, ainvoke=ainvoke)
+    return SimpleNamespace(client=client, get_client=lambda: client)
 
 
 class TestTryStreaming:
@@ -58,7 +61,7 @@ class TestTryStreaming:
 
         adapter = _make_fake_adapter(astream=astream)
 
-        result = await _try_streaming(adapter, "model-a")
+        result = await _try_streaming(adapter.client, "model-a")
 
         assert result.is_available is True
         assert result.path == "stream"
@@ -75,7 +78,7 @@ class TestTryStreaming:
 
         adapter = _make_fake_adapter(astream=astream)
 
-        result = await _try_streaming(adapter, "model-a")
+        result = await _try_streaming(adapter.client, "model-a")
 
         assert result.is_available is False
         assert result.path == "stream"
@@ -109,7 +112,7 @@ class TestTryNonStreaming:
         times = itertools.chain([100.0, 103.0], itertools.repeat(103.0))
         monkeypatch.setattr("ocht.services.health_check.time.monotonic", lambda: next(times))
 
-        result = await _try_non_streaming(adapter, "model-a")
+        result = await _try_non_streaming(adapter.client, "model-a")
 
         assert result.is_available is True
         assert result.path == "async"
@@ -161,6 +164,32 @@ class TestCheckModelHealth:
 
         assert result.is_available is False
         assert result.error == "stream failure"
+
+    @pytest.mark.asyncio
+    async def test_reports_clear_error_when_adapter_has_no_client(self, temp_db) -> None:
+        """Should surface `LLMAdapter.get_client()`'s error instead of a generic AttributeError.
+
+        Covers the gap `LLMAdapter.get_client()`'s docstring warns about: a future adapter that
+        doesn't wrap a bare LangChain client must fail legibly here, not with an opaque
+        `AttributeError` inside `_try_streaming()`/`_try_non_streaming()`.
+        """
+        with get_session() as db:
+            provider = create_llm_provider_config(db, name="Ollama", api_key="", endpoint="http://localhost:11434")
+            create_model(db, "model-a", model_provider_id=provider.prov_id)
+            provider_id = provider.prov_id
+
+        class _ClientlessAdapter:
+            def get_client(self):
+                raise AdapterClientUnavailableError(
+                    "_ClientlessAdapter does not expose a 'client' attribute this health check can probe"
+                )
+
+        with patch("ocht.services.health_check.build_adapter", return_value=_ClientlessAdapter()):
+            result = await check_model_health(provider_id, "model-a")
+
+        assert result.is_available is False
+        assert result.path == "none"
+        assert result.error == "_ClientlessAdapter does not expose a 'client' attribute this health check can probe"
 
 
 class TestRunHealthCheck:

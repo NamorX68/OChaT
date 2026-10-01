@@ -11,10 +11,10 @@ in the process), and records the result back onto `Model`.
 Deliberately bypasses `LLMAdapter.send_prompt_async()`/`send_prompt_stream()` (and therefore the
 retry/circuit-breaker layer in `adapters/resilience.py`) - a health check's entire purpose is to
 report the model's *current, true* status, and masking a failure behind automatic retries would
-produce a falsely-rosy result. It talks to `adapter.client` (the raw LangChain client each
-concrete adapter exposes by convention) directly instead, since it needs the metadata
-(`response_metadata`/`usage_metadata`) those public methods discard, and has no use for the
-conversation-history bookkeeping they do.
+produce a falsely-rosy result. It talks to the `HealthProbeClient` returned by
+`LLMAdapter.get_client()` directly instead (in practice always a raw LangChain chat-model client
+today), since it needs the metadata (`response_metadata`/`usage_metadata`) the public send_prompt*
+methods discard, and has no use for the conversation-history bookkeeping they do.
 """
 import time
 from dataclasses import dataclass
@@ -23,6 +23,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
+from ocht.adapters.base import AdapterClientUnavailableError, HealthProbeClient
 from ocht.core.db import get_session
 from ocht.repositories.llm_provider_config import get_all_llm_provider_configs, get_llm_provider_config_by_id
 from ocht.repositories.model import get_model_by_name, get_models_by_provider, record_health_check_result
@@ -90,11 +91,12 @@ def _tokens_per_second(message: Any, elapsed_seconds: float) -> float | None:
     return None
 
 
-async def _try_streaming(adapter, model_name: str) -> HealthCheckResult:
+async def _try_streaming(client: HealthProbeClient, model_name: str) -> HealthCheckResult:
     """Probes a model via its streaming API, gathering the final chunk's metadata.
 
     Args:
-        adapter: A throwaway adapter built by `build_adapter()`.
+        client: The client returned by `LLMAdapter.get_client()` (a `HealthProbeClient`;
+            currently always a LangChain chat model in practice).
         model_name: Name of the model being checked (carried through into the result).
 
     Returns:
@@ -103,7 +105,7 @@ async def _try_streaming(adapter, model_name: str) -> HealthCheckResult:
     start = time.monotonic()
     try:
         gathered = None
-        async for chunk in adapter.client.astream([HumanMessage(content=HEALTH_CHECK_PROMPT)]):
+        async for chunk in client.astream([HumanMessage(content=HEALTH_CHECK_PROMPT)]):
             # LangChain message-chunk addition merges content and metadata across chunks, so the
             # final `gathered` carries the same response_metadata/usage_metadata a non-streaming
             # call would have returned in one shot.
@@ -118,11 +120,12 @@ async def _try_streaming(adapter, model_name: str) -> HealthCheckResult:
         return HealthCheckResult(model_name, False, "stream", (time.monotonic() - start) * 1000, None, str(exc))
 
 
-async def _try_non_streaming(adapter, model_name: str) -> HealthCheckResult:
+async def _try_non_streaming(client: HealthProbeClient, model_name: str) -> HealthCheckResult:
     """Probes a model via its non-streaming API - used as a fallback if streaming fails.
 
     Args:
-        adapter: A throwaway adapter built by `build_adapter()`.
+        client: The client returned by `LLMAdapter.get_client()` (a `HealthProbeClient`;
+            currently always a LangChain chat model in practice).
         model_name: Name of the model being checked (carried through into the result).
 
     Returns:
@@ -130,7 +133,7 @@ async def _try_non_streaming(adapter, model_name: str) -> HealthCheckResult:
     """
     start = time.monotonic()
     try:
-        response = await adapter.client.ainvoke([HumanMessage(content=HEALTH_CHECK_PROMPT)])
+        response = await client.ainvoke([HumanMessage(content=HEALTH_CHECK_PROMPT)])
         elapsed = time.monotonic() - start
         return HealthCheckResult(
             model_name, True, "async", elapsed * 1000, _tokens_per_second(response, elapsed), None
@@ -170,25 +173,21 @@ async def check_model_health(provider_id: int, model_name: str) -> HealthCheckRe
             "Model or provider not found, model does not belong to that provider, or unsupported provider type"
         )
 
-    if not hasattr(adapter, "client"):
-        # `adapter.client` is an established-by-convention attribute on every current concrete
-        # adapter (OllamaAdapter/OpenAICompatibleAdapter both wrap a LangChain chat-model client
-        # this way), not something LLMAdapter's abstract interface declares or enforces. A future
-        # adapter that doesn't follow this convention (e.g. a native MLX-LM adapter with no
-        # LangChain client at all - see CLAUDE.md's Phase 3 roadmap) would otherwise fail inside
-        # _try_streaming()/_try_non_streaming() with a generic AttributeError caught by their
-        # broad `except Exception`, indistinguishable from a real model outage. Surfacing it here
-        # instead makes a wiring gap look like a wiring gap, not a false "model is down" result.
-        return HealthCheckResult(
-            model_name, False, "none", None, None,
-            f"{type(adapter).__name__} does not expose a 'client' attribute this health check can probe"
-        )
+    try:
+        client = adapter.get_client()
+    except AdapterClientUnavailableError as exc:
+        # A future adapter that doesn't wrap a bare LangChain client (e.g. a native MLX-LM adapter
+        # with no LangChain client at all - see CLAUDE.md's Phase 3 roadmap) would otherwise fail
+        # inside _try_streaming()/_try_non_streaming() with a generic AttributeError caught by
+        # their broad `except Exception`, indistinguishable from a real model outage. Surfacing it
+        # here instead makes a wiring gap look like a wiring gap, not a false "model is down" result.
+        return HealthCheckResult(model_name, False, "none", None, None, str(exc))
 
-    stream_result = await _try_streaming(adapter, model_name)
+    stream_result = await _try_streaming(client, model_name)
     if stream_result.is_available:
         return stream_result
 
-    fallback_result = await _try_non_streaming(adapter, model_name)
+    fallback_result = await _try_non_streaming(client, model_name)
     return fallback_result if fallback_result.is_available else stream_result
 
 

@@ -21,29 +21,106 @@ import httpx
 import ollama
 import openai
 
-# Non-retryable OpenAI-compatible errors: config/request problems that will not succeed on retry
-# (wrong API key, unknown model, malformed request, etc.) - retrying would just waste time and,
-# for a circuit breaker, falsely count a permanent misconfiguration as a transient outage.
-_NON_RETRYABLE_OPENAI_TYPES = (
-    openai.AuthenticationError,
-    openai.NotFoundError,
-    openai.PermissionDeniedError,
-    openai.BadRequestError,
-    openai.ConflictError,
-    openai.UnprocessableEntityError,
-)
+_HTTP_SERVER_ERROR_THRESHOLD = 500
+"""Lowest HTTP status code conventionally considered a server-side (5xx) error.
 
-# Same non-retryable reasoning as _NON_RETRYABLE_OPENAI_TYPES above, but for the `anthropic` SDK's
-# own exception hierarchy (used by AnthropicAdapter) - structurally similar to openai's, but a
-# distinct set of classes, so it can't just reuse the OpenAI tuple/isinstance checks.
-_NON_RETRYABLE_ANTHROPIC_TYPES = (
-    anthropic.AuthenticationError,
-    anthropic.NotFoundError,
-    anthropic.PermissionDeniedError,
-    anthropic.BadRequestError,
-    anthropic.ConflictError,
-    anthropic.UnprocessableEntityError,
+Server errors are treated as transient/retryable (the provider's fault, likely to clear on retry);
+client errors (4xx) below this threshold are not, except where an SDK's own status-code semantics
+say otherwise - see `SdkExceptionProfile.status_code_retryable`'s Ollama override below, which
+also treats status_code == -1 (no status code at all) as retryable.
+"""
+
+
+def _is_server_error_status(status_code: int) -> bool:
+    """Default `SdkExceptionProfile.status_code_retryable`: retryable only for a 5xx status."""
+    return status_code >= _HTTP_SERVER_ERROR_THRESHOLD
+
+
+def _is_ollama_retryable_status(status_code: int) -> bool:
+    """Ollama's `status_code_retryable` override: a 5xx status, or -1 (no status code at all).
+
+    `ollama.ResponseError.status_code` defaults to -1 when Ollama's own error response didn't
+    carry one - treated as unknown-but-worth-retrying rather than assumed to be a permanent 4xx.
+    """
+    return status_code >= _HTTP_SERVER_ERROR_THRESHOLD or status_code == -1
+
+
+@dataclass(frozen=True)
+class SdkExceptionProfile:
+    """Retry-classification rules for one LLM-provider SDK's exception hierarchy.
+
+    `is_retryable()`/`compute_delay()` used to hardcode one near-identical four-branch
+    if/isinstance chain per SDK (OpenAI, Anthropic, plus Ollama's own shape) - an Open/Closed
+    violation flagged as tech debt once a third SDK (`anthropic`) duplicated the pattern: adding a
+    fourth adapter's SDK meant editing both functions' bodies again. This dataclass captures one
+    SDK's rules as data instead, so `_SDK_PROFILES` below is the only thing a new SDK needs to
+    extend - `is_retryable()`/`compute_delay()` stay unchanged.
+
+    Checked in the fixed order `rate_limit_types` -> `non_retryable_types` -> `status_error_type`
+    -> `connection_types`, matching the order the original hand-written branches used (matters
+    because, in both the `openai` and `anthropic` SDKs, `RateLimitError` and the various
+    non-retryable 4xx errors are themselves subclasses of the generic status-error type, so they
+    must be checked before it).
+
+    Attributes:
+        rate_limit_types: Exception types representing a 429 rate limit - always retryable.
+        non_retryable_types: Exception types reflecting a permanent config/request problem
+            (bad auth, unknown model, malformed request, ...) that will not succeed on retry -
+            retrying would just waste time and, for a circuit breaker, falsely count a permanent
+            misconfiguration as a transient outage.
+        status_error_type: The SDK's generic status-error type exposing `.status_code` (e.g.
+            `openai.APIStatusError`), used as a catch-all for status codes with no more specific
+            named type above. None if the SDK has no such generic type.
+        status_code_retryable: Given `status_error_type.status_code`, returns whether that status
+            is worth retrying. Defaults to "5xx only". Ollama's `ResponseError.status_code`
+            defaults to -1 when its own error response didn't carry one - that SDK supplies its
+            own predicate treating -1 as unknown-but-worth-retrying rather than a permanent 4xx.
+        connection_types: Exception types treated as always-retryable connection/timeout errors.
+    """
+    rate_limit_types: tuple[type[BaseException], ...] = ()
+    non_retryable_types: tuple[type[BaseException], ...] = ()
+    status_error_type: type[BaseException] | None = None
+    status_code_retryable: Callable[[int], bool] = _is_server_error_status
+    connection_types: tuple[type[BaseException], ...] = ()
+
+
+_SDK_PROFILES: tuple[SdkExceptionProfile, ...] = (
+    SdkExceptionProfile(
+        rate_limit_types=(openai.RateLimitError,),
+        non_retryable_types=(
+            openai.AuthenticationError,
+            openai.NotFoundError,
+            openai.PermissionDeniedError,
+            openai.BadRequestError,
+            openai.ConflictError,
+            openai.UnprocessableEntityError,
+        ),
+        status_error_type=openai.APIStatusError,
+        connection_types=(openai.APIConnectionError, openai.APITimeoutError),
+    ),
+    SdkExceptionProfile(
+        rate_limit_types=(anthropic.RateLimitError,),
+        non_retryable_types=(
+            anthropic.AuthenticationError,
+            anthropic.NotFoundError,
+            anthropic.PermissionDeniedError,
+            anthropic.BadRequestError,
+            anthropic.ConflictError,
+            anthropic.UnprocessableEntityError,
+        ),
+        status_error_type=anthropic.APIStatusError,
+        connection_types=(anthropic.APIConnectionError, anthropic.APITimeoutError),
+    ),
+    SdkExceptionProfile(
+        status_error_type=ollama.ResponseError,
+        status_code_retryable=_is_ollama_retryable_status,
+    ),
 )
+"""One `SdkExceptionProfile` per LLM-provider SDK this project's adapters can raise.
+
+Add a new adapter's SDK-specific exceptions here - not by editing `is_retryable()`/
+`compute_delay()` - per the project's `CLAUDE.md`, "Adding New Providers" step 4.
+"""
 
 
 @dataclass
@@ -142,9 +219,8 @@ def is_retryable(exc: BaseException) -> bool:
     Non-retryable: authentication/permission/not-found/bad-request errors - these reflect a
     configuration problem that will not resolve itself on retry. Unknown exception types are
     treated as non-retryable too, so a real bug isn't silently masked as "just try again".
-    Classifies both `openai`- and `anthropic`-SDK exception hierarchies (structurally similar, but
-    distinct classes - `ChatOpenAI`/`OpenAICompatibleAdapter` raise the former, `ChatAnthropic`/
-    `AnthropicAdapter` the latter), plus `ollama.ResponseError` and generic `httpx.TransportError`.
+    Classifies every SDK listed in `_SDK_PROFILES` (currently `openai`, `anthropic`, `ollama`),
+    plus a generic `httpx.TransportError` fallback that isn't SDK-specific.
 
     Args:
         exc: The exception raised by an adapter's underlying LangChain client call.
@@ -152,26 +228,15 @@ def is_retryable(exc: BaseException) -> bool:
     Returns:
         True if the call should be retried, False if it should fail immediately.
     """
-    if isinstance(exc, openai.RateLimitError):
-        return True
-    if isinstance(exc, _NON_RETRYABLE_OPENAI_TYPES):
-        return False
-    if isinstance(exc, openai.APIStatusError):
-        return exc.status_code >= 500
-    if isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError)):
-        return True
-    if isinstance(exc, ollama.ResponseError):
-        # status_code defaults to -1 when Ollama's own error response didn't carry one - treat
-        # that as unknown-but-worth-retrying rather than assuming it's a permanent 4xx.
-        return exc.status_code >= 500 or exc.status_code == -1
-    if isinstance(exc, anthropic.RateLimitError):
-        return True
-    if isinstance(exc, _NON_RETRYABLE_ANTHROPIC_TYPES):
-        return False
-    if isinstance(exc, anthropic.APIStatusError):
-        return exc.status_code >= 500
-    if isinstance(exc, (anthropic.APIConnectionError, anthropic.APITimeoutError)):
-        return True
+    for profile in _SDK_PROFILES:
+        if isinstance(exc, profile.rate_limit_types):
+            return True
+        if isinstance(exc, profile.non_retryable_types):
+            return False
+        if profile.status_error_type is not None and isinstance(exc, profile.status_error_type):
+            return profile.status_code_retryable(exc.status_code)
+        if isinstance(exc, profile.connection_types):
+            return True
     if isinstance(exc, httpx.TransportError):
         return True
     return False
@@ -189,7 +254,7 @@ def compute_delay(attempt: int, policy: RetryPolicy, exc: BaseException) -> floa
     Returns:
         The number of seconds to wait before the next attempt.
     """
-    is_rate_limit = isinstance(exc, (openai.RateLimitError, anthropic.RateLimitError))
+    is_rate_limit = any(isinstance(exc, profile.rate_limit_types) for profile in _SDK_PROFILES)
     base = policy.rate_limit_base_delay_seconds if is_rate_limit else policy.base_delay_seconds
     delay = min(base * (policy.multiplier ** (attempt - 1)), policy.max_delay_seconds)
     return delay + random.uniform(0, policy.jitter_seconds)
