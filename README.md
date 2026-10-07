@@ -312,6 +312,8 @@ Test coverage includes:
 - Provider adapters and model synchronization
 - CLI command functionality
 
+See `### Running tests and the linter` under `## 🛠️ Development` for setup and linting details.
+
 ---
 
 ## 🛠️ Development
@@ -335,6 +337,23 @@ alembic revision --autogenerate -m "description"
 # Apply migration
 uv run ocht migrate head
 ```
+
+### Running tests and the linter
+
+Set up the development environment and run checks:
+
+```bash
+# Install dev dependencies
+uv sync
+
+# Run the test suite
+uv run pytest
+
+# Lint the codebase
+uv run ruff check .
+```
+
+`ruff format` is not enforced yet in this project.
 
 ---
 
