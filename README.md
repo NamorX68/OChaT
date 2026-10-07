@@ -262,6 +262,15 @@ OChaT/
 └── uv.lock
 ```
 
+## 🧭 Project layout
+
+- **adapters/** — LangChain adapter implementations for each LLM provider (Ollama, OpenAI/LM Studio, Anthropic), plus a resilience layer with retry and circuit-breaker logic and a hybrid memory strategy.
+- **core/** — Database engine and session management, SQLModel entity definitions, Alembic migration helper, and package version helper.
+- **data/** — Runtime directory for the SQLite database file, created on first use under `DEFAULT_DB_PATH` (`src/ocht/data/ocht.db`) and overridable via the `DATABASE_URL` environment variable; not checked into the repository.
+- **repositories/** — CRUD functions for each domain entity (workspace, message, LLM provider configuration, model, setting, prompt template).
+- **services/** — Business logic and use cases: chat session management, workspace and configuration handling, model and provider synchronization, prompt and adapter management, settings, and model health checks.
+- **tui/** — Textual-based user interface with the main `ChatApp` entry point, screens for provider/model/workspace/settings management, custom widgets (chat bubbles, footer, confirmation dialogs), and TCSS styling files.
+
 ---
 
 ## 🚀 Usage Examples
