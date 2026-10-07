@@ -6,6 +6,24 @@
 
 ---
 
+## Contents
+
+- [✨ Features](#features)
+- [📦 Installation](#installation)
+- [⚡ Quick Start](#quick-start)
+- [🏗️ Architecture](#architecture)
+- [🧠 Memory Management](#memory-management)
+- [🗂️ Project Structure](#project-structure)
+- [🧭 Project layout](#project-layout)
+- [🚀 Usage Examples](#usage-examples)
+- [🧪 Testing](#testing)
+- [🛠️ Development](#development)
+- [⚠️ Important Notes](#important-notes)
+- [🤝 Contributing](#contributing)
+- [📄 License](#license)
+
+---
+
 ## ✨ Features
 
 - **Multi-Provider Support**: Seamlessly switch between Ollama, LM Studio, and OpenAI
